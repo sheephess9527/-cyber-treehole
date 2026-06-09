@@ -1,0 +1,493 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="一个无功利记录、反算法侵蚀的个人精神自留地。" />
+    <meta name="theme-color" content="#0B0A09" />
+    <title>赛博自留地</title>
+    <style>
+      :root {
+        --void: #020202;
+        --page: #0b0a09;
+        --panel: #171512;
+        --panel-soft: #12110f;
+        --text: #e3ddd2;
+        --text-soft: rgba(227, 221, 210, 0.78);
+        --muted: #82796c;
+        --line: #302b24;
+        --accent: #b0a18b;
+      }
+
+      * { box-sizing: border-box; }
+      html { background: var(--page); color: var(--text); }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background:
+          radial-gradient(circle at 50% -20%, rgba(176, 161, 139, 0.08), transparent 36rem),
+          var(--page);
+        color: var(--text);
+        font-family: Inter, "Noto Sans SC", system-ui, sans-serif;
+      }
+      button, input, textarea { font: inherit; }
+      button { cursor: pointer; }
+      ::selection { background: var(--line); color: var(--text); }
+
+      .serif { font-family: "Noto Serif SC", "Songti SC", serif; }
+      .fade { animation: fadeIn 720ms cubic-bezier(.22,.61,.36,1) both; }
+      .hide { opacity: 0; transform: translateY(12px); pointer-events: none; }
+      .stage { min-height: 100vh; transition: opacity 720ms cubic-bezier(.22,.61,.36,1), transform 720ms cubic-bezier(.22,.61,.36,1); }
+
+      .entrance {
+        position: fixed;
+        inset: 0;
+        z-index: 20;
+        display: grid;
+        grid-template-rows: 1fr auto;
+        padding: 40px 24px;
+        background:
+          radial-gradient(circle at 50% 42%, rgba(176, 161, 139, 0.055), transparent 32rem),
+          var(--void);
+      }
+      .entrance-center {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 36px;
+      }
+      .hero-image {
+        width: min(680px, 100%);
+        aspect-ratio: 16 / 9.6;
+        border: 1px solid var(--line);
+        object-fit: cover;
+        opacity: 0.96;
+        box-shadow: 0 0 90px rgba(176, 161, 139, 0.08);
+        background: var(--panel);
+      }
+      .entrance-copy {
+        margin: 0;
+        color: var(--text-soft);
+        font-size: 15px;
+        line-height: 1.8;
+        letter-spacing: .08em;
+        text-align: center;
+      }
+      .ghost-button {
+        border: 0;
+        background: transparent;
+        color: var(--muted);
+        padding: 12px 16px;
+        font-size: 13px;
+        letter-spacing: .16em;
+        transition: color 500ms cubic-bezier(.22,.61,.36,1), border-color 500ms cubic-bezier(.22,.61,.36,1);
+      }
+      .ghost-button:hover, .ghost-button:focus { color: var(--accent); outline: none; }
+      .entrance .ghost-button { margin: 0 auto 12px; }
+
+      .app { min-height: 100vh; background: var(--page); }
+      .nav {
+        position: sticky;
+        top: 0;
+        z-index: 10;
+        border-bottom: 1px solid var(--line);
+        background: rgba(11, 10, 9, 0.92);
+        backdrop-filter: blur(14px);
+      }
+      .nav-inner {
+        max-width: 1120px;
+        margin: 0 auto;
+        padding: 20px 24px;
+        display: flex;
+        justify-content: center;
+        gap: clamp(24px, 6vw, 56px);
+      }
+      .nav button {
+        border: 0;
+        background: transparent;
+        color: var(--muted);
+        font-size: 12px;
+        letter-spacing: .18em;
+        transition: color 500ms cubic-bezier(.22,.61,.36,1);
+      }
+      .nav button:hover { color: var(--accent); }
+      .nav button.active { color: var(--text); }
+
+      main { max-width: 1120px; margin: 0 auto; padding: 80px 24px 112px; }
+      .narrow { max-width: 760px; }
+      textarea, input {
+        width: 100%;
+        color: var(--text);
+        background: transparent;
+        border: 0;
+        border-bottom: 1px solid var(--line);
+        outline: none;
+        padding: 18px 0;
+        line-height: 1.8;
+        transition: border-color 500ms cubic-bezier(.22,.61,.36,1), background 500ms cubic-bezier(.22,.61,.36,1);
+      }
+      textarea::placeholder, input::placeholder { color: var(--muted); }
+      textarea:focus, input:focus { border-color: rgba(176, 161, 139, .72); }
+      textarea { resize: vertical; min-height: 116px; }
+      .field-box {
+        border: 1px solid var(--line);
+        background: rgba(23, 21, 18, .86);
+        padding: 20px;
+      }
+
+      .timeline { margin-top: 56px; border-left: 1px solid var(--line); }
+      .timeline article { position: relative; margin: 0 0 48px; padding-left: 32px; }
+      .timeline article::before {
+        content: "";
+        position: absolute;
+        left: -3px;
+        top: 12px;
+        width: 5px;
+        height: 5px;
+        background: rgba(176, 161, 139, .68);
+      }
+      time { color: var(--muted); font-size: 12px; }
+      p { line-height: 1.85; }
+      .timeline p, .about-copy, .reader-body { color: var(--text-soft); }
+
+      .echo-form {
+        margin-bottom: 80px;
+        padding-bottom: 56px;
+        border-bottom: 1px solid var(--line);
+        display: grid;
+        grid-template-columns: 240px 1fr;
+        gap: 32px;
+      }
+      .photo-picker {
+        aspect-ratio: 4 / 3;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border: 1px solid var(--line);
+        background: var(--panel);
+        color: var(--muted);
+        font-size: 12px;
+        letter-spacing: .16em;
+        text-align: center;
+        overflow: hidden;
+        transition: border-color 500ms cubic-bezier(.22,.61,.36,1), color 500ms cubic-bezier(.22,.61,.36,1);
+      }
+      .photo-picker:hover { border-color: rgba(176,161,139,.62); color: var(--accent); }
+      .photo-picker img, .card img, .reader img { width: 100%; height: 100%; object-fit: cover; display: block; }
+      .photo-picker input { display: none; }
+      .echo-fields { display: grid; gap: 22px; align-content: start; }
+
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 36px;
+      }
+      .card {
+        border: 0;
+        padding: 0;
+        background: transparent;
+        text-align: left;
+      }
+      .card-frame {
+        aspect-ratio: 4 / 3;
+        border: 1px solid var(--line);
+        background: var(--panel-soft);
+        overflow: hidden;
+      }
+      .card img { opacity: .96; transition: opacity 700ms cubic-bezier(.22,.61,.36,1), transform 900ms cubic-bezier(.22,.61,.36,1); }
+      .card:hover img { opacity: 1; transform: scale(1.015); }
+      .card h2 {
+        margin: 22px 0 8px;
+        color: rgba(227,221,210,.92);
+        font-size: 20px;
+        line-height: 1.7;
+        font-weight: 400;
+      }
+      .reader { max-width: 760px; }
+      .reader-image {
+        width: 100%;
+        aspect-ratio: 16 / 10;
+        margin: 0 0 48px;
+        border: 1px solid var(--line);
+        background: var(--panel);
+        overflow: hidden;
+      }
+      .reader h1 { margin: 16px 0 0; font-size: clamp(30px, 5vw, 42px); line-height: 1.55; font-weight: 400; }
+      .reader-body { margin-top: 48px; font-size: 17px; line-height: 1.95; }
+
+      .mailbox { margin-top: 76px; display: grid; gap: 28px; }
+      .letter-list, .backup { margin-top: 48px; padding-top: 36px; border-top: 1px solid var(--line); }
+      .letter-list article { margin-bottom: 28px; }
+      .backup { display: flex; flex-wrap: wrap; gap: 20px; }
+      .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); }
+
+      @keyframes fadeIn {
+        from { opacity: 0; transform: translateY(12px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+      @media (max-width: 760px) {
+        main { padding-top: 56px; }
+        .echo-form, .grid { grid-template-columns: 1fr; }
+        .nav-inner { gap: 18px; padding-inline: 16px; }
+        .nav button { font-size: 11px; letter-spacing: .12em; }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script>
+      const storage = {
+        whispers: "treehole.whispers",
+        echoes: "treehole.echoes",
+        letters: "treehole.letters"
+      };
+      const MAILBOX_ENDPOINT = "";
+
+      const svg = (body) => "data:image/svg+xml;charset=utf-8," + encodeURIComponent(body);
+      const images = {
+        entrance: svg(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 860"><rect width="1400" height="860" fill="#080706"/><rect y="500" width="1400" height="360" fill="#15120f"/><circle cx="900" cy="300" r="126" fill="#786b57" opacity=".22"/><path d="M0 492 C180 462 308 505 456 478 C626 446 746 492 890 466 C1072 430 1224 468 1400 430 L1400 860 L0 860 Z" fill="#24201a"/><path d="M0 580 C220 552 394 585 598 554 C774 526 910 582 1098 538 C1230 512 1326 520 1400 504 L1400 860 L0 860 Z" fill="#171512"/><rect y="448" width="1400" height="2" fill="#51483d" opacity=".9"/><rect y="450" width="1400" height="138" fill="url(#mist)" opacity=".86"/><filter id="grain"><feTurbulence type="fractalNoise" baseFrequency=".72" numOctaves="3"/><feColorMatrix type="saturate" values="0"/><feComponentTransfer><feFuncA type="table" tableValues="0 .09"/></feComponentTransfer></filter><rect width="1400" height="860" filter="url(#grain)" opacity=".68"/><defs><linearGradient id="mist" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#d8ccb8" stop-opacity=".19"/><stop offset=".5" stop-color="#8a8a8a" stop-opacity=".11"/><stop offset="1" stop-color="#000" stop-opacity="0"/></linearGradient></defs></svg>`),
+        water: svg(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 900"><rect width="1200" height="900" fill="#090807"/><rect y="220" width="1200" height="680" fill="#15120f"/><path d="M0 286 C120 258 248 296 390 274 C558 250 684 290 840 264 C998 238 1108 258 1200 240" fill="none" stroke="#665d50" stroke-width="2" opacity=".78"/><path d="M120 430 C250 412 320 446 458 424 C642 394 754 432 942 402 C1036 388 1116 392 1200 380" fill="none" stroke="#a09179" stroke-width="1" opacity=".42"/><path d="M0 578 C180 548 360 602 558 566 C732 534 902 586 1200 536" fill="none" stroke="#5a5248" stroke-width="1" opacity=".6"/><path d="M246 706 C380 696 496 720 650 698 C838 672 952 700 1082 674" fill="none" stroke="#b0a18b" stroke-width="1" opacity=".28"/><filter id="grain"><feTurbulence type="fractalNoise" baseFrequency=".86" numOctaves="2"/><feColorMatrix type="saturate" values="0"/><feComponentTransfer><feFuncA type="table" tableValues="0 .09"/></feComponentTransfer></filter><rect width="1200" height="900" filter="url(#grain)" opacity=".65"/></svg>`),
+        room: svg(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 900"><rect width="1200" height="900" fill="#080706"/><path d="M110 90 H1090 V770 H110 Z" fill="#171512"/><path d="M110 770 H1090 L1200 900 H0 Z" fill="#0f0d0b"/><rect x="760" y="130" width="170" height="260" fill="#201c17"/><rect x="780" y="150" width="130" height="220" fill="#756957" opacity=".36"/><path d="M780 150 L362 770 H608 L910 370 V150 Z" fill="#d7cab2" opacity=".13"/><rect x="240" y="618" width="330" height="8" fill="#3c352d" opacity=".68"/><rect x="240" y="626" width="330" height="76" fill="#191611"/><filter id="grain"><feTurbulence type="fractalNoise" baseFrequency=".78" numOctaves="3"/><feColorMatrix type="saturate" values="0"/><feComponentTransfer><feFuncA type="table" tableValues="0 .07"/></feComponentTransfer></filter><rect width="1200" height="900" filter="url(#grain)" opacity=".62"/></svg>`),
+        field: svg(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 900"><rect width="1200" height="900" fill="#080706"/><rect y="390" width="1200" height="510" fill="#15120f"/><path d="M0 394 C160 374 258 402 410 386 C598 366 730 396 900 376 C1040 360 1134 368 1200 356" fill="none" stroke="#5c5347" stroke-width="2" opacity=".82"/><g stroke="#62594c" stroke-width="1" opacity=".62"><path d="M146 840 C156 728 170 632 192 524"/><path d="M250 852 C242 730 264 624 286 506"/><path d="M430 872 C428 750 468 636 512 496"/><path d="M650 860 C626 744 664 612 708 480"/><path d="M874 868 C880 742 910 620 972 486"/><path d="M1038 850 C1018 730 1048 622 1096 510"/></g><rect y="300" width="1200" height="210" fill="url(#haze)" opacity=".72"/><filter id="grain"><feTurbulence type="fractalNoise" baseFrequency=".92" numOctaves="2"/><feColorMatrix type="saturate" values="0"/><feComponentTransfer><feFuncA type="table" tableValues="0 .08"/></feComponentTransfer></filter><rect width="1200" height="900" filter="url(#grain)" opacity=".66"/><defs><linearGradient id="haze" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#000" stop-opacity="0"/><stop offset=".5" stop-color="#c7bda9" stop-opacity=".09"/><stop offset="1" stop-color="#000" stop-opacity="0"/></linearGradient></defs></svg>`)
+      };
+
+      const initialWhispers = [
+        { time: "2026-06-08 23:45", text: "忽然觉得，真正属于自己的地方，不应该催促我表达得更好。" },
+        { time: "2026-06-08 21:12", text: "今晚没有结论。只是把一小段沉默放在这里。" },
+        { time: "2026-06-07 00:18", text: "我想保留一些不被推荐、不被比较、不被解释的东西。" }
+      ];
+      const defaultEchoes = [
+        { title: "黑暗里有缓慢的水声", date: "2026-06-08", image: images.water, body: "有些记录并不为了抵达谁。它们只是把某个夜晚轻轻钉住，让我在之后回看时，确认自己曾经完整地经过那里。这里不展示成果，不制造人格，也不向任何算法递交情绪样本。" },
+        { title: "给无用之物留一个房间", date: "2026-06-03", image: images.room, body: "当所有平台都在追问下一次更新、下一次互动、下一次被看见，我更想练习一种低声的存在。写下没有用途的话，保存没有立刻价值的照片，让生活重新拥有一点不被消费的暗面。" },
+        { title: "反算法侵蚀备忘", date: "2026-05-29", image: images.field, body: "不统计，不迎合，不追逐反馈。把页面做得足够安静，是为了让每一次进入都像推开一扇很轻的门，而不是踏进一条永远向下刷新的河。" }
+      ];
+
+      let tab = "whispers";
+      let activeEcho = null;
+      let draftPhoto = "";
+      const root = document.getElementById("root");
+      const read = (key, fallback) => {
+        try { return JSON.parse(localStorage.getItem(key)) || fallback; } catch { return fallback; }
+      };
+      const write = (key, value) => localStorage.setItem(key, JSON.stringify(value));
+      const safe = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#39;"
+      }[char]));
+      const safeImage = (value) => {
+        const image = String(value ?? "");
+        return image.startsWith("data:image/") ? image : images.entrance;
+      };
+      const stamp = () => {
+        const d = new Date();
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+      };
+      const day = () => stamp().slice(0, 10);
+
+      function enter() {
+        document.querySelector(".entrance").classList.add("hide");
+        setTimeout(renderApp, 680);
+      }
+
+      function renderEntrance() {
+        root.innerHTML = `
+          <section class="entrance stage">
+            <div class="entrance-center">
+              <img class="hero-image" src="${images.entrance}" alt="低饱和静谧风景">
+              <p class="entrance-copy serif">有缘人得见，这里是我的赛博自留地。</p>
+            </div>
+            <button class="ghost-button serif" onclick="enter()">[ 步入树洞 ]</button>
+          </section>
+        `;
+      }
+
+      function shell(content) {
+        root.innerHTML = `
+          <div class="app fade">
+            <nav class="nav">
+              <div class="nav-inner">
+                <button class="${tab === "whispers" ? "active" : ""}" onclick="switchTab('whispers')">呢喃墙</button>
+                <button class="${tab === "echoes" ? "active" : ""}" onclick="switchTab('echoes')">光影与回响</button>
+                <button class="${tab === "about" ? "active" : ""}" onclick="switchTab('about')">留白与信箱</button>
+              </div>
+            </nav>
+            ${content}
+          </div>
+        `;
+      }
+      function switchTab(next) { tab = next; activeEcho = null; renderApp(); }
+
+      function renderApp() {
+        if (tab === "whispers") renderWhispers();
+        if (tab === "echoes") renderEchoes();
+        if (tab === "about") renderAbout();
+      }
+
+      function renderWhispers() {
+        const items = read(storage.whispers, initialWhispers);
+        shell(`
+          <main class="narrow fade">
+            <form id="whisperForm">
+              <textarea id="whisperText" rows="3" placeholder="这一刻你在想什么..."></textarea>
+              <button class="ghost-button serif" type="submit">[ 记下 ]</button>
+            </form>
+            ${items.length > initialWhispers.length ? `<button class="ghost-button serif" onclick="clearWhispers()">[ 清空自己的新增记录 ]</button>` : ""}
+            <section class="timeline">
+              ${items.map(item => `<article class="fade"><time>[${safe(item.time)}]</time><p class="serif">${safe(item.text)}</p></article>`).join("")}
+            </section>
+          </main>
+        `);
+        document.getElementById("whisperForm").onsubmit = (event) => {
+          event.preventDefault();
+          const value = document.getElementById("whisperText").value.trim();
+          if (!value) return;
+          write(storage.whispers, [{ time: stamp(), text: value }, ...items]);
+          renderWhispers();
+        };
+      }
+      function clearWhispers() { write(storage.whispers, initialWhispers); renderWhispers(); }
+
+      function allEchoes() { return [...read(storage.echoes, []), ...defaultEchoes]; }
+      function renderEchoes() {
+        const items = allEchoes();
+        if (activeEcho !== null) {
+          const item = items[activeEcho];
+          shell(`
+            <main class="reader fade">
+              <button class="ghost-button serif" onclick="activeEcho=null; renderEchoes()">[ 返回 ]</button>
+              ${item.personal ? `<button class="ghost-button serif" onclick="removeEcho(${activeEcho})">[ 移除 ]</button>` : ""}
+              <div class="reader-image"><img src="${safeImage(item.image)}" alt=""></div>
+              <time>${safe(item.date)}</time>
+              <h1 class="serif">${safe(item.title)}</h1>
+              <p class="reader-body serif">${safe(item.body)}</p>
+            </main>
+          `);
+          return;
+        }
+        shell(`
+          <main class="fade">
+            <form class="echo-form" id="echoForm">
+              <label class="photo-picker serif" id="photoPicker">
+                <span>[ 选一张照片 ]</span>
+                <input id="echoPhoto" type="file" accept="image/*">
+              </label>
+              <div class="echo-fields">
+                <input id="echoTitle" placeholder="给这束光一个标题...">
+                <textarea id="echoBody" rows="4" placeholder="留下它当时的回响..."></textarea>
+                <button class="ghost-button serif" type="submit">[ 收进回响 ]</button>
+              </div>
+            </form>
+            <section class="grid">
+              ${items.map((item, index) => `
+                <button class="card fade" onclick="activeEcho=${index}; renderEchoes()">
+                  <div class="card-frame"><img src="${safeImage(item.image)}" alt=""></div>
+                  <h2 class="serif">${safe(item.title)}</h2>
+                  <time>${safe(item.date)}</time>
+                </button>
+              `).join("")}
+            </section>
+          </main>
+        `);
+        document.getElementById("echoPhoto").onchange = (event) => {
+          const file = event.target.files && event.target.files[0];
+          if (!file) return;
+          const reader = new FileReader();
+          reader.onload = () => {
+            draftPhoto = reader.result;
+            document.getElementById("photoPicker").innerHTML = `<img src="${draftPhoto}" alt=""><input id="echoPhoto" type="file" accept="image/*">`;
+            document.getElementById("echoPhoto").onchange = event.target.onchange;
+          };
+          reader.readAsDataURL(file);
+        };
+        document.getElementById("echoForm").onsubmit = (event) => {
+          event.preventDefault();
+          const title = document.getElementById("echoTitle").value.trim() || "未命名的回响";
+          const body = document.getElementById("echoBody").value.trim() || "这一张照片暂时不需要解释。";
+          const custom = read(storage.echoes, []);
+          write(storage.echoes, [{ title, body, date: day(), image: draftPhoto || images.entrance, personal: true }, ...custom]);
+          draftPhoto = "";
+          renderEchoes();
+        };
+      }
+      function removeEcho(index) {
+        const custom = read(storage.echoes, []);
+        write(storage.echoes, custom.filter((_, itemIndex) => itemIndex !== index));
+        activeEcho = null;
+        renderEchoes();
+      }
+
+      function renderAbout() {
+        const letters = read(storage.letters, []);
+        shell(`
+          <main class="narrow fade">
+            <p class="about-copy serif">这个域名暂时不承担身份，也不承担作品集。它只是我在网络深处留出的一小块暗房，用来存放不急着被理解的句子、照片和沉默。</p>
+            <form class="mailbox" id="mailForm">
+              <textarea class="field-box" id="mailMessage" rows="5" placeholder="想对树洞说的话..."></textarea>
+              <input class="field-box" id="mailContact" placeholder="你的联系方式（选填，若需回信）">
+              <button class="ghost-button serif" type="submit">[ 投递 ]</button>
+              <p id="mailStatus" style="color: var(--muted); min-height: 1.5em;"></p>
+            </form>
+            ${letters.length ? `<section class="letter-list">${letters.slice(0, 3).map(letter => `<article><time>[${safe(letter.time)}]</time>${letter.message ? `<p class="serif">${safe(letter.message)}</p>` : ""}${letter.contact ? `<p style="color: var(--muted); font-size: 12px;">${safe(letter.contact)}</p>` : ""}</article>`).join("")}</section>` : ""}
+            <section class="backup">
+              <button class="ghost-button serif" onclick="exportBackup()">[ 导出备份 ]</button>
+              <label class="ghost-button serif">[ 导入备份 ]<input class="sr-only" id="backupInput" type="file" accept="application/json"></label>
+            </section>
+          </main>
+        `);
+        document.getElementById("mailForm").onsubmit = async (event) => {
+          event.preventDefault();
+          const message = document.getElementById("mailMessage").value.trim();
+          const contact = document.getElementById("mailContact").value.trim();
+          if (!message && !contact) return;
+          const letter = { time: stamp(), message, contact };
+          if (MAILBOX_ENDPOINT) {
+            try {
+              await fetch(MAILBOX_ENDPOINT, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(letter) });
+            } catch {
+              document.getElementById("mailStatus").textContent = "没有送出去。";
+              return;
+            }
+          }
+          write(storage.letters, [letter, ...letters]);
+          document.getElementById("mailStatus").textContent = "已放进树洞。";
+          setTimeout(renderAbout, 700);
+        };
+        document.getElementById("backupInput").onchange = importBackup;
+      }
+      function exportBackup() {
+        const data = JSON.stringify({
+          whispers: read(storage.whispers, initialWhispers),
+          echoes: read(storage.echoes, []),
+          letters: read(storage.letters, [])
+        }, null, 2);
+        const url = URL.createObjectURL(new Blob([data], { type: "application/json;charset=utf-8" }));
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = `treehole-backup-${day()}.json`;
+        link.click();
+        URL.revokeObjectURL(url);
+      }
+      function importBackup(event) {
+        const file = event.target.files && event.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = () => {
+          try {
+            const data = JSON.parse(reader.result);
+            if (Array.isArray(data.whispers)) write(storage.whispers, data.whispers);
+            if (Array.isArray(data.echoes)) write(storage.echoes, data.echoes);
+            if (Array.isArray(data.letters)) write(storage.letters, data.letters);
+            renderApp();
+          } catch {}
+        };
+        reader.readAsText(file, "utf-8");
+      }
+
+      renderEntrance();
+    </script>
+  </body>
+</html>
