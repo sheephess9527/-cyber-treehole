@@ -220,6 +220,7 @@
       .letter-list, .backup { margin-top: 48px; padding-top: 36px; border-top: 1px solid var(--line); }
       .letter-list article { margin-bottom: 28px; }
       .backup { display: flex; flex-wrap: wrap; gap: 20px; }
+      .status-line { color: var(--muted); font-size: 13px; line-height: 1.8; min-height: 1.8em; }
       .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); }
 
       @keyframes fadeIn {
@@ -242,7 +243,8 @@
         echoes: "treehole.echoes",
         letters: "treehole.letters"
       };
-      const MAILBOX_ENDPOINT = "";
+      const API_POSTS = "/api/posts";
+      const cloudEnabled = location.protocol === "http:" || location.protocol === "https:";
 
       const svg = (body) => "data:image/svg+xml;charset=utf-8," + encodeURIComponent(body);
       const images = {
@@ -266,6 +268,10 @@
       let tab = "whispers";
       let activeEcho = null;
       let draftPhoto = "";
+      let sharedWhispers = null;
+      let sharedLetters = null;
+      let loadingWhispers = false;
+      let loadingLetters = false;
       const root = document.getElementById("root");
       const read = (key, fallback) => {
         try { return JSON.parse(localStorage.getItem(key)) || fallback; } catch { return fallback; }
@@ -287,6 +293,67 @@
         return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
       };
       const day = () => stamp().slice(0, 10);
+      const toDisplayTime = (value) => {
+        if (!value) return stamp();
+        const date = new Date(value);
+        if (Number.isNaN(date.getTime())) return String(value).slice(0, 16);
+        return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")} ${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+      };
+
+      async function fetchShared(kind) {
+        if (!cloudEnabled) return [];
+        const response = await fetch(`${API_POSTS}?kind=${encodeURIComponent(kind)}`, { headers: { "Accept": "application/json" } });
+        if (!response.ok) throw new Error("fetch failed");
+        const data = await response.json();
+        return (data.posts || []).map((item) => ({
+          id: item.id,
+          time: toDisplayTime(item.created_at),
+          text: item.content || ""
+        }));
+      }
+
+      async function createShared(kind, content, contact = "") {
+        if (!cloudEnabled) throw new Error("cloud disabled");
+        const response = await fetch(API_POSTS, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "Accept": "application/json" },
+          body: JSON.stringify({ kind, content, contact })
+        });
+        if (!response.ok) {
+          const data = await response.json().catch(() => ({}));
+          throw new Error(data.error || "submit failed");
+        }
+        const data = await response.json();
+        return {
+          id: data.post.id,
+          time: toDisplayTime(data.post.created_at),
+          text: data.post.content || ""
+        };
+      }
+
+      function loadWhispers() {
+        if (sharedWhispers || loadingWhispers) return;
+        loadingWhispers = true;
+        fetchShared("whisper")
+          .then((items) => { sharedWhispers = items; })
+          .catch(() => { sharedWhispers = []; })
+          .finally(() => {
+            loadingWhispers = false;
+            if (tab === "whispers") renderWhispers();
+          });
+      }
+
+      function loadLetters() {
+        if (sharedLetters || loadingLetters) return;
+        loadingLetters = true;
+        fetchShared("letter")
+          .then((items) => { sharedLetters = items; })
+          .catch(() => { sharedLetters = []; })
+          .finally(() => {
+            loadingLetters = false;
+            if (tab === "about") renderAbout();
+          });
+      }
 
       function enter() {
         document.querySelector(".entrance").classList.add("hide");
@@ -328,28 +395,44 @@
       }
 
       function renderWhispers() {
-        const items = read(storage.whispers, initialWhispers);
+        loadWhispers();
+        const localItems = read(storage.whispers, []);
+        const publicItems = sharedWhispers || [];
+        const items = [...publicItems, ...localItems, ...initialWhispers];
         shell(`
           <main class="narrow fade">
             <form id="whisperForm">
               <textarea id="whisperText" rows="3" placeholder="这一刻你在想什么..."></textarea>
               <button class="ghost-button serif" type="submit">[ 记下 ]</button>
             </form>
-            ${items.length > initialWhispers.length ? `<button class="ghost-button serif" onclick="clearWhispers()">[ 清空自己的新增记录 ]</button>` : ""}
+            <p class="status-line" id="whisperStatus">${loadingWhispers ? "正在读取云端呢喃..." : ""}</p>
+            ${localItems.length ? `<button class="ghost-button serif" onclick="clearWhispers()">[ 清空本机缓存记录 ]</button>` : ""}
             <section class="timeline">
               ${items.map(item => `<article class="fade"><time>[${safe(item.time)}]</time><p class="serif">${safe(item.text)}</p></article>`).join("")}
             </section>
           </main>
         `);
-        document.getElementById("whisperForm").onsubmit = (event) => {
+        document.getElementById("whisperForm").onsubmit = async (event) => {
           event.preventDefault();
           const value = document.getElementById("whisperText").value.trim();
           if (!value) return;
-          write(storage.whispers, [{ time: stamp(), text: value }, ...items]);
-          renderWhispers();
+          const status = document.getElementById("whisperStatus");
+          status.textContent = "正在写入云端...";
+          try {
+            const created = await createShared("whisper", value);
+            sharedWhispers = [created, ...(sharedWhispers || [])];
+            renderWhispers();
+          } catch {
+            write(storage.whispers, [{ time: stamp(), text: value }, ...localItems]);
+            renderWhispers();
+            requestAnimationFrame(() => {
+              const nextStatus = document.getElementById("whisperStatus");
+              if (nextStatus) nextStatus.textContent = "云端暂不可用，已保存在本机。";
+            });
+          }
         };
       }
-      function clearWhispers() { write(storage.whispers, initialWhispers); renderWhispers(); }
+      function clearWhispers() { write(storage.whispers, []); renderWhispers(); }
 
       function allEchoes() { return [...read(storage.echoes, []), ...defaultEchoes]; }
       function renderEchoes() {
@@ -421,7 +504,10 @@
       }
 
       function renderAbout() {
-        const letters = read(storage.letters, []);
+        loadLetters();
+        const localLetters = read(storage.letters, []);
+        const publicLetters = sharedLetters || [];
+        const letters = [...publicLetters, ...localLetters];
         shell(`
           <main class="narrow fade">
             <p class="about-copy serif">这个域名暂时不承担身份，也不承担作品集。它只是我在网络深处留出的一小块暗房，用来存放不急着被理解的句子、照片和沉默。</p>
@@ -429,9 +515,9 @@
               <textarea class="field-box" id="mailMessage" rows="5" placeholder="想对树洞说的话..."></textarea>
               <input class="field-box" id="mailContact" placeholder="你的联系方式（选填，若需回信）">
               <button class="ghost-button serif" type="submit">[ 投递 ]</button>
-              <p id="mailStatus" style="color: var(--muted); min-height: 1.5em;"></p>
+              <p id="mailStatus" class="status-line">${loadingLetters ? "正在读取云端留言..." : ""}</p>
             </form>
-            ${letters.length ? `<section class="letter-list">${letters.slice(0, 3).map(letter => `<article><time>[${safe(letter.time)}]</time>${letter.message ? `<p class="serif">${safe(letter.message)}</p>` : ""}${letter.contact ? `<p style="color: var(--muted); font-size: 12px;">${safe(letter.contact)}</p>` : ""}</article>`).join("")}</section>` : ""}
+            ${letters.length ? `<section class="letter-list">${letters.slice(0, 12).map(letter => `<article><time>[${safe(letter.time)}]</time><p class="serif">${safe(letter.text || letter.message || "")}</p></article>`).join("")}</section>` : ""}
             <section class="backup">
               <button class="ghost-button serif" onclick="exportBackup()">[ 导出备份 ]</button>
               <label class="ghost-button serif">[ 导入备份 ]<input class="sr-only" id="backupInput" type="file" accept="application/json"></label>
@@ -444,17 +530,18 @@
           const contact = document.getElementById("mailContact").value.trim();
           if (!message && !contact) return;
           const letter = { time: stamp(), message, contact };
-          if (MAILBOX_ENDPOINT) {
-            try {
-              await fetch(MAILBOX_ENDPOINT, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(letter) });
-            } catch {
-              document.getElementById("mailStatus").textContent = "没有送出去。";
-              return;
-            }
+          const status = document.getElementById("mailStatus");
+          status.textContent = "正在写入云端...";
+          try {
+            const created = await createShared("letter", message || "（无正文）", contact);
+            sharedLetters = [created, ...(sharedLetters || [])];
+            document.getElementById("mailStatus").textContent = "已放进树洞。";
+            setTimeout(renderAbout, 700);
+          } catch {
+            write(storage.letters, [letter, ...localLetters]);
+            document.getElementById("mailStatus").textContent = "云端暂不可用，已保存在本机。";
+            setTimeout(renderAbout, 900);
           }
-          write(storage.letters, [letter, ...letters]);
-          document.getElementById("mailStatus").textContent = "已放进树洞。";
-          setTimeout(renderAbout, 700);
         };
         document.getElementById("backupInput").onchange = importBackup;
       }
