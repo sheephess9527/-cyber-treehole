@@ -1,0 +1,9 @@
+.git
+.git/**
+functions
+functions/**
+worker.js
+wrangler.jsonc
+schema.sql
+DEPLOY.md
+.assetsignore
