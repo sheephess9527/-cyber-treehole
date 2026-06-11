@@ -286,6 +286,50 @@
         return src.startsWith("data:") || src.startsWith("http") ? src : images.entrance;
       }
 
+      // Downscale + re-encode a picked photo so it fits the cloud content cap.
+      // The page never displays wider than ~760px, so shrinking to 1600px on the
+      // long edge is visually lossless here while keeping the upload shareable.
+      function compressImage(file, maxEdge = 1600, quality = 0.82) {
+        return new Promise((resolve, reject) => {
+          if (!file || !file.type || !file.type.startsWith("image/")) {
+            reject(new Error("not an image"));
+            return;
+          }
+          const url = URL.createObjectURL(file);
+          const img = new Image();
+          img.onload = () => {
+            URL.revokeObjectURL(url);
+            const scale = Math.min(1, maxEdge / Math.max(img.width, img.height));
+            const width = Math.max(1, Math.round(img.width * scale));
+            const height = Math.max(1, Math.round(img.height * scale));
+            const canvas = document.createElement("canvas");
+            canvas.width = width;
+            canvas.height = height;
+            canvas.getContext("2d").drawImage(img, 0, 0, width, height);
+            // ~700KB binary keeps the JSON payload under the 1MB content cap.
+            const BUDGET = 700000;
+            let q = quality;
+            let dataUrl = canvas.toDataURL("image/jpeg", q);
+            while (dataUrl.length * 0.75 > BUDGET && q > 0.4) {
+              q = Math.round((q - 0.1) * 100) / 100;
+              dataUrl = canvas.toDataURL("image/jpeg", q);
+            }
+            resolve(dataUrl);
+          };
+          img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("decode failed")); };
+          img.src = url;
+        });
+      }
+
+      function readFileAsDataUrl(file) {
+        return new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result);
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
+      }
+
       function stamp() {
         const d = new Date();
         return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
@@ -527,23 +571,27 @@
           </main>
         `);
 
-        // Photo picker
+        // Photo picker — compress before keeping the photo so it can sync to cloud.
         const photoInput = document.getElementById("echoPhoto");
         if (photoInput) {
-          photoInput.onchange = (event) => {
+          const onPhoto = async (event) => {
             const file = event.target.files && event.target.files[0];
             if (!file) return;
-            const reader = new FileReader();
-            reader.onload = () => {
-              draftPhoto = reader.result;
-              const picker = document.getElementById("photoPicker");
-              picker.innerHTML = `<img src="${draftPhoto}" alt=""><input id="echoPhoto" type="file" accept="image/*">`;
-              // Re-attach event
-              const newInput = picker.querySelector("input");
-              if (newInput) newInput.onchange = photoInput.onchange;
-            };
-            reader.readAsDataURL(file);
+            const picker = document.getElementById("photoPicker");
+            const prev = picker.innerHTML;
+            picker.innerHTML = `<span>[ 正在压缩照片... ]</span>`;
+            try {
+              draftPhoto = await compressImage(file);
+            } catch {
+              try { draftPhoto = await readFileAsDataUrl(file); }
+              catch { draftPhoto = ""; }
+            }
+            if (!draftPhoto) { picker.innerHTML = prev; return; }
+            picker.innerHTML = `<img src="${safe(draftPhoto)}" alt=""><input id="echoPhoto" type="file" accept="image/*">`;
+            const newInput = picker.querySelector("input");
+            if (newInput) newInput.onchange = onPhoto;
           };
+          photoInput.onchange = onPhoto;
         }
 
         // Submit handler with cloud support
