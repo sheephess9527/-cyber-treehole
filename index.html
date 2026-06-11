@@ -273,7 +273,12 @@
       let loadingLetters = false;
       let loadingEchoes = false;   // 新增
       function safe(str) {
-        return String(str || "").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+        return String(str || "")
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;")
+          .replace(/'/g, "&#39;");
       }
 
       function safeImage(src) {
@@ -483,11 +488,12 @@
         loadEchoes();  // 加载云端回响
         if (activeEcho !== null) {
           const item = items[activeEcho];
+          if (!item) { activeEcho = null; renderEchoes(); return; }
           shell(`
             <main class="reader fade">
               <button class="ghost-button serif" onclick="activeEcho=null; renderEchoes()">[ 返回 ]</button>
               ${item.personal ? `<button class="ghost-button serif" onclick="removeEcho(${activeEcho})">[ 移除 ]</button>` : ""}
-              <div class="reader-image"><img src="${safeImage(item.image)}" alt=""></div>
+              <div class="reader-image"><img src="${safe(safeImage(item.image))}" alt=""></div>
               <time>${safe(item.date)}</time>
               <h1 class="serif">${safe(item.title)}</h1>
               <p class="reader-body serif">${safe(item.body)}</p>
@@ -512,7 +518,7 @@
             <section class="grid">
               ${items.map((item, index) => `
                 <button class="card fade" onclick="activeEcho=${index}; renderEchoes()">
-                  <div class="card-frame"><img src="${safeImage(item.image)}" alt=""></div>
+                  <div class="card-frame"><img src="${safe(safeImage(item.image))}" alt=""></div>
                   <h2 class="serif">${safe(item.title)}</h2>
                   <time>${safe(item.date)}</time>
                 </button>
@@ -555,9 +561,9 @@
 
             try {
               const created = await createShared("echo", echoContent);
-              // Add to local for immediate display
-              const custom = read(storage.echoes, []);
-              write(storage.echoes, [{ title, body, date: day(), image: imageData, personal: true }, ...custom]);
+              // Stored in the cloud, so show it from the shared list only.
+              // Writing a local copy too would double it after a reload.
+              sharedEchoes = [{ title, body, date: day(), image: imageData, personal: false }, ...(sharedEchoes || [])];
               draftPhoto = "";
               if (status) status.textContent = "已收进云端回响！";
               setTimeout(() => renderEchoes(), 800);
@@ -574,8 +580,13 @@
       }
 
       function removeEcho(index) {
+        // `index` points into the combined list [public..., local..., default...].
+        // Only local echoes are removable, so map back to the local array.
+        const publicCount = (sharedEchoes || []).length;
+        const localIndex = index - publicCount;
         const custom = read(storage.echoes, []);
-        write(storage.echoes, custom.filter((_, itemIndex) => itemIndex !== index));
+        if (localIndex < 0 || localIndex >= custom.length) { activeEcho = null; renderEchoes(); return; }
+        write(storage.echoes, custom.filter((_, itemIndex) => itemIndex !== localIndex));
         activeEcho = null;
         renderEchoes();
       }

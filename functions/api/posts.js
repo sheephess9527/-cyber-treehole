@@ -3,9 +3,38 @@ const headers = {
   "Cache-Control": "no-store",
 };
 
-const allowedKinds = new Set(["whisper", "letter"]);
+const allowedKinds = new Set(["whisper", "letter", "echo"]);
+
+// Per-kind content limits. echo carries an embedded image payload, so it needs
+// more room than a plain text post. Large media should ideally live in R2, but
+// this keeps the bundled-image flow working without a separate storage binding.
+const MAX_CONTENT = { whisper: 2000, letter: 2000, echo: 1000000 };
+const MAX_CONTACT = 500;
+
+// Best-effort, in-memory rate limit. State lives only inside the current
+// isolate and is never persisted, so it adds no deanonymization surface. It
+// will not stop a distributed flood, but it blunts trivial single-source spam.
+const RATE_WINDOW_MS = 30000;
+const RATE_MAX = 5;
+const rateState = new Map();
+
+let schemaReady = false;
+
+function rateLimited(ip) {
+  const now = Date.now();
+  const hits = (rateState.get(ip) || []).filter((t) => now - t < RATE_WINDOW_MS);
+  if (hits.length >= RATE_MAX) {
+    rateState.set(ip, hits);
+    return true;
+  }
+  hits.push(now);
+  rateState.set(ip, hits);
+  if (rateState.size > 5000) rateState.clear();
+  return false;
+}
 
 async function ensureSchema(db) {
+  if (schemaReady) return;
   await db.prepare(`
     CREATE TABLE IF NOT EXISTS public_posts (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -19,6 +48,7 @@ async function ensureSchema(db) {
     CREATE INDEX IF NOT EXISTS idx_public_posts_kind_created
     ON public_posts (kind, created_at DESC)
   `).run();
+  schemaReady = true;
 }
 
 function json(body, status = 200) {
@@ -51,6 +81,11 @@ export async function onRequestPost(context) {
   const db = context.env.DB;
   if (!db) return json({ error: "D1 binding DB is missing" }, 500);
 
+  const ip = context.request.headers.get("CF-Connecting-IP") || "unknown";
+  if (rateLimited(ip)) {
+    return json({ error: "Too many requests. Please slow down." }, 429);
+  }
+
   let payload;
   try {
     payload = await context.request.json();
@@ -64,8 +99,8 @@ export async function onRequestPost(context) {
 
   if (!allowedKinds.has(kind)) return json({ error: "Invalid kind" }, 400);
   if (!content) return json({ error: "Content is required" }, 400);
-  if (content.length > 2000) return json({ error: "Content is too long" }, 400);
-  if (contact.length > 500) return json({ error: "Contact is too long" }, 400);
+  if (content.length > MAX_CONTENT[kind]) return json({ error: "Content is too long" }, 400);
+  if (contact.length > MAX_CONTACT) return json({ error: "Contact is too long" }, 400);
 
   await ensureSchema(db);
   const createdAt = new Date().toISOString();
