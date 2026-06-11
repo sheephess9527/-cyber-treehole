@@ -268,9 +268,10 @@
       let draftPhoto = "";
       let sharedWhispers = null;
       let sharedLetters = null;
+      let sharedEchoes = null;     // 新增
       let loadingWhispers = false;
       let loadingLetters = false;
-
+      let loadingEchoes = false;   // 新增
       function safe(str) {
         return String(str || "").replace(/</g, "&lt;").replace(/>/g, "&gt;");
       }
@@ -367,7 +368,30 @@
       }
 
       function loadEchoes() {
-        // For echoes, we can add cloud loading if needed, but for now focus on submit
+        if (sharedEchoes || loadingEchoes) return;
+        loadingEchoes = true;
+        fetchShared("echo")
+          .then((items) => { 
+            sharedEchoes = items.map(item => {
+              try {
+                const parsed = JSON.parse(item.text);
+                return {
+                  title: parsed.title || "未命名",
+                  body: parsed.body || "",
+                  date: parsed.date || item.time,
+                  image: parsed.image || images.entrance,
+                  personal: false
+                };
+              } catch {
+                return { title: "回响", body: item.text, date: item.time, image: images.entrance, personal: false };
+              }
+            });
+          })
+          .catch(() => { sharedEchoes = []; })
+          .finally(() => {
+            loadingEchoes = false;
+            if (tab === "echoes") renderEchoes();
+          });
       }
 
       function enter() {
@@ -449,9 +473,14 @@
       }
       function clearWhispers() { write(storage.whispers, []); renderWhispers(); }
 
-      function allEchoes() { return [...read(storage.echoes, []), ...defaultEchoes]; }
+      function allEchoes() {
+        const local = read(storage.echoes, []);
+        const publicItems = sharedEchoes || [];
+        return [...publicItems, ...local, ...defaultEchoes];
+      }
       function renderEchoes() {
         const items = allEchoes();
+        loadEchoes();  // 加载云端回响
         if (activeEcho !== null) {
           const item = items[activeEcho];
           shell(`
