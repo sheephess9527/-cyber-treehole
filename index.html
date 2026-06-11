@@ -259,11 +259,9 @@
         { time: "2026-06-08 21:12", text: "今晚没有结论。只是把一小段沉默放在这里。" },
         { time: "2026-06-07 00:18", text: "我想保留一些不被推荐、不被比较、不被解释的东西。" }
       ];
-      const defaultEchoes = [
-        { title: "黑暗里有缓慢的水声", date: "2026-06-08", image: images.water, body: "有些记录并不为了抵达谁。它们只是把某个夜晚轻轻钉住，让我在之后回看时，确认自己曾经完整地经过那里。这里不展示成果，不制造人格，也不向任何算法递交情绪样本。" },
-        { title: "给无用之物留一个房间", date: "2026-06-03", image: images.room, body: "当所有平台都在追问下一次更新、下一次互动、下一次被看见，我更想练习一种低声的存在。写下没有用途的话，保存没有立刻价值的照片，让生活重新拥有一点不被消费的暗面。" },
-        { title: "反算法侵蚀备忘", date: "2026-05-29", image: images.field, body: "不统计，不迎合，不追逐反馈。把页面做得足够安静，是为了让每一次进入都像推开一扇很轻的门，而不是踏进一条永远向下刷新的河。" }
-      ];
+
+      // Add default echoes if needed (you had some before)
+      const defaultEchoes = [];
 
       let tab = "whispers";
       let activeEcho = null;
@@ -272,29 +270,42 @@
       let sharedLetters = null;
       let loadingWhispers = false;
       let loadingLetters = false;
-      const root = document.getElementById("root");
-      const read = (key, fallback) => {
-        try { return JSON.parse(localStorage.getItem(key)) || fallback; } catch { return fallback; }
-      };
-      const write = (key, value) => localStorage.setItem(key, JSON.stringify(value));
-      const safe = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({
-        "&": "&amp;",
-        "<": "&lt;",
-        ">": "&gt;",
-        '"': "&quot;",
-        "'": "&#39;"
-      }[char]));
-      const safeImage = (value) => {
-        const image = String(value ?? "");
-        return image.startsWith("data:image/") ? image : images.entrance;
-      };
-      const stamp = () => {
+
+      function safe(str) {
+        return String(str || "").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+      }
+
+      function safeImage(src) {
+        if (!src) return images.entrance;
+        return src.startsWith("data:") || src.startsWith("http") ? src : images.entrance;
+      }
+
+      function stamp() {
         const d = new Date();
-        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
-      };
-      const day = () => stamp().slice(0, 10);
-      const toDisplayTime = (value) => {
-        if (!value) return stamp();
+        return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+      }
+
+      function day() {
+        const d = new Date();
+        return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+      }
+
+      function read(key, fallback) {
+        try {
+          const raw = localStorage.getItem(key);
+          return raw ? JSON.parse(raw) : fallback;
+        } catch {
+          return fallback;
+        }
+      }
+
+      function write(key, data) {
+        try {
+          localStorage.setItem(key, JSON.stringify(data));
+        } catch {}
+      }
+
+      function toDisplayTime(value) {
         const date = new Date(value);
         if (Number.isNaN(date.getTime())) return String(value).slice(0, 16);
         return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")} ${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
@@ -353,6 +364,10 @@
             loadingLetters = false;
             if (tab === "about") renderAbout();
           });
+      }
+
+      function loadEchoes() {
+        // For echoes, we can add cloud loading if needed, but for now focus on submit
       }
 
       function enter() {
@@ -464,6 +479,7 @@
                 <button class="ghost-button serif" type="submit">[ 收进回响 ]</button>
               </div>
             </form>
+            <p class="status-line" id="echoStatus"></p>
             <section class="grid">
               ${items.map((item, index) => `
                 <button class="card fade" onclick="activeEcho=${index}; renderEchoes()">
@@ -475,27 +491,59 @@
             </section>
           </main>
         `);
-        document.getElementById("echoPhoto").onchange = (event) => {
-          const file = event.target.files && event.target.files[0];
-          if (!file) return;
-          const reader = new FileReader();
-          reader.onload = () => {
-            draftPhoto = reader.result;
-            document.getElementById("photoPicker").innerHTML = `<img src="${draftPhoto}" alt=""><input id="echoPhoto" type="file" accept="image/*">`;
-            document.getElementById("echoPhoto").onchange = event.target.onchange;
+
+        // Photo picker
+        const photoInput = document.getElementById("echoPhoto");
+        if (photoInput) {
+          photoInput.onchange = (event) => {
+            const file = event.target.files && event.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = () => {
+              draftPhoto = reader.result;
+              const picker = document.getElementById("photoPicker");
+              picker.innerHTML = `<img src="${draftPhoto}" alt=""><input id="echoPhoto" type="file" accept="image/*">`;
+              // Re-attach event
+              const newInput = picker.querySelector("input");
+              if (newInput) newInput.onchange = photoInput.onchange;
+            };
+            reader.readAsDataURL(file);
           };
-          reader.readAsDataURL(file);
-        };
-        document.getElementById("echoForm").onsubmit = (event) => {
-          event.preventDefault();
-          const title = document.getElementById("echoTitle").value.trim() || "未命名的回响";
-          const body = document.getElementById("echoBody").value.trim() || "这一张照片暂时不需要解释。";
-          const custom = read(storage.echoes, []);
-          write(storage.echoes, [{ title, body, date: day(), image: draftPhoto || images.entrance, personal: true }, ...custom]);
-          draftPhoto = "";
-          renderEchoes();
-        };
+        }
+
+        // Submit handler with cloud support
+        const echoForm = document.getElementById("echoForm");
+        if (echoForm) {
+          echoForm.onsubmit = async (event) => {
+            event.preventDefault();
+            const title = document.getElementById("echoTitle").value.trim() || "未命名的回响";
+            const body = document.getElementById("echoBody").value.trim() || "这一张照片暂时不需要解释。";
+            const status = document.getElementById("echoStatus");
+            if (status) status.textContent = "正在收进回响...";
+
+            const imageData = draftPhoto || images.entrance;
+            const echoContent = JSON.stringify({ title, body, image: imageData });
+
+            try {
+              const created = await createShared("echo", echoContent);
+              // Add to local for immediate display
+              const custom = read(storage.echoes, []);
+              write(storage.echoes, [{ title, body, date: day(), image: imageData, personal: true }, ...custom]);
+              draftPhoto = "";
+              if (status) status.textContent = "已收进云端回响！";
+              setTimeout(() => renderEchoes(), 800);
+            } catch (err) {
+              // Fallback to local
+              const custom = read(storage.echoes, []);
+              write(storage.echoes, [{ title, body, date: day(), image: imageData, personal: true }, ...custom]);
+              draftPhoto = "";
+              if (status) status.textContent = "云端暂不可用，已保存在本机。";
+              setTimeout(() => renderEchoes(), 800);
+            }
+          };
+        }
       }
+
       function removeEcho(index) {
         const custom = read(storage.echoes, []);
         write(storage.echoes, custom.filter((_, itemIndex) => itemIndex !== index));

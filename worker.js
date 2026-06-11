@@ -1,4 +1,4 @@
-const ALLOWED_KINDS = new Set(["whisper", "letter"]);
+const ALLOWED_KINDS = new Set(["whisper", "letter", "echo"]);
 
 async function ensureSchema(db) {
   await db
