@@ -244,10 +244,29 @@
       const storage = {
         whispers: "treehole.whispers",
         echoes: "treehole.echoes",
-        letters: "treehole.letters"
+        letters: "treehole.letters",
+        authorKey: "treehole.authorKey"
       };
       const API_POSTS = "/api/posts";
       const cloudEnabled = location.protocol === "http:" || location.protocol === "https:";
+
+      // Author mode. The key proves authorship to the backend (whisper/echo are
+      // owner-only). It is stored on this device only and verified server-side —
+      // a stored key just decides whether the publish forms are shown.
+      function getAuthorKey() {
+        try { return localStorage.getItem(storage.authorKey) || ""; } catch { return ""; }
+      }
+      function isAuthor() { return !!getAuthorKey(); }
+      function promptAuthor() {
+        const value = (window.prompt("请输入作者密钥（只保存在本机，用于发布呢喃与回响）：") || "").trim();
+        if (!value) return;
+        try { localStorage.setItem(storage.authorKey, value); } catch {}
+        renderApp();
+      }
+      function logoutAuthor() {
+        try { localStorage.removeItem(storage.authorKey); } catch {}
+        renderApp();
+      }
 
       const svg = (body) => "data:image/svg+xml;charset=utf-8," + encodeURIComponent(body);
       const images = {
@@ -378,14 +397,19 @@
 
       async function createShared(kind, content, contact = "") {
         if (!cloudEnabled) throw new Error("cloud disabled");
+        const headers = { "Content-Type": "application/json", "Accept": "application/json" };
+        const key = getAuthorKey();
+        if (key) headers["x-author-key"] = key;
         const response = await fetch(API_POSTS, {
           method: "POST",
-          headers: { "Content-Type": "application/json", "Accept": "application/json" },
+          headers,
           body: JSON.stringify({ kind, content, contact })
         });
         if (!response.ok) {
           const data = await response.json().catch(() => ({}));
-          throw new Error(data.error || "submit failed");
+          const error = new Error(data.error || "submit failed");
+          error.status = response.status;
+          throw error;
         }
         const data = await response.json();
         return {
@@ -492,18 +516,20 @@
         const items = [...publicItems, ...localItems, ...initialWhispers];
         shell(`
           <main class="narrow fade">
+            ${isAuthor() ? `
             <form id="whisperForm">
               <textarea id="whisperText" rows="3" placeholder="这一刻你在想什么..."></textarea>
               <button class="ghost-button serif" type="submit">[ 记下 ]</button>
-            </form>
+            </form>` : ""}
             <p class="status-line" id="whisperStatus">${loadingWhispers ? "正在读取云端呢喃..." : ""}</p>
-            ${localItems.length ? `<button class="ghost-button serif" onclick="clearWhispers()">[ 清空本机缓存记录 ]</button>` : ""}
+            ${isAuthor() && localItems.length ? `<button class="ghost-button serif" onclick="clearWhispers()">[ 清空本机缓存记录 ]</button>` : ""}
             <section class="timeline">
               ${items.map(item => `<article class="fade"><time>[${safe(item.time)}]</time><p class="serif">${safe(item.text)}</p></article>`).join("")}
             </section>
           </main>
         `);
-        document.getElementById("whisperForm").onsubmit = async (event) => {
+        const whisperForm = document.getElementById("whisperForm");
+        if (whisperForm) whisperForm.onsubmit = async (event) => {
           event.preventDefault();
           const value = document.getElementById("whisperText").value.trim();
           if (!value) return;
@@ -513,7 +539,11 @@
             const created = await createShared("whisper", value);
             sharedWhispers = [created, ...(sharedWhispers || [])];
             renderWhispers();
-          } catch {
+          } catch (err) {
+            if (err && (err.status === 401 || err.status === 503)) {
+              status.textContent = err.status === 401 ? "作者密钥无效，无法发布。请重新登录作者。" : "服务器未配置作者密钥（AUTHOR_KEY）。";
+              return;
+            }
             write(storage.whispers, [{ time: stamp(), text: value }, ...localItems]);
             renderWhispers();
             requestAnimationFrame(() => {
@@ -550,6 +580,7 @@
         }
         shell(`
           <main class="fade">
+            ${isAuthor() ? `
             <form class="echo-form" id="echoForm">
               <label class="photo-picker serif" id="photoPicker">
                 <span>[ 选一张照片 ]</span>
@@ -560,7 +591,7 @@
                 <textarea id="echoBody" rows="4" placeholder="留下它当时的回响..."></textarea>
                 <button class="ghost-button serif" type="submit">[ 收进回响 ]</button>
               </div>
-            </form>
+            </form>` : ""}
             <p class="status-line" id="echoStatus"></p>
             <section class="grid">
               ${items.map((item, index) => `
@@ -619,6 +650,10 @@
               if (status) status.textContent = "已收进云端回响！";
               setTimeout(() => renderEchoes(), 800);
             } catch (err) {
+              if (err && (err.status === 401 || err.status === 503)) {
+                if (status) status.textContent = err.status === 401 ? "作者密钥无效，无法发布。请重新登录作者。" : "服务器未配置作者密钥（AUTHOR_KEY）。";
+                return;
+              }
               // Fallback to local
               const custom = read(storage.echoes, []);
               write(storage.echoes, [{ title, body, date: day(), image: imageData, personal: true }, ...custom]);
@@ -660,6 +695,9 @@
             <section class="backup">
               <button class="ghost-button serif" onclick="exportBackup()">[ 导出备份 ]</button>
               <label class="ghost-button serif">[ 导入备份 ]<input class="sr-only" id="backupInput" type="file" accept="application/json"></label>
+              ${isAuthor()
+                ? `<button class="ghost-button serif" onclick="logoutAuthor()">[ 退出作者 ]</button>`
+                : `<button class="ghost-button serif" onclick="promptAuthor()">[ 作者登录 ]</button>`}
             </section>
           </main>
         `);

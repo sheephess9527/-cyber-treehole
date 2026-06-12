@@ -5,6 +5,18 @@ const headers = {
 
 const allowedKinds = new Set(["whisper", "letter", "echo"]);
 
+// Only the site owner may publish to these. "letter" (信箱) stays open to
+// everyone so visitors can still reach out. Authorship is proven with a key
+// kept in the AUTHOR_KEY environment secret — never shipped to the browser.
+const restrictedKinds = new Set(["whisper", "echo"]);
+
+function safeEqual(a, b) {
+  if (typeof a !== "string" || typeof b !== "string" || a.length !== b.length) return false;
+  let mismatch = 0;
+  for (let i = 0; i < a.length; i++) mismatch |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return mismatch === 0;
+}
+
 // Per-kind content limits. echo carries an embedded image payload, so it needs
 // more room than a plain text post. Large media should ideally live in R2, but
 // this keeps the bundled-image flow working without a separate storage binding.
@@ -98,6 +110,12 @@ export async function onRequestPost(context) {
   const contact = String(payload.contact || "").trim();
 
   if (!allowedKinds.has(kind)) return json({ error: "Invalid kind" }, 400);
+  if (restrictedKinds.has(kind)) {
+    if (!context.env.AUTHOR_KEY) return json({ error: "Author posting is not configured. Set the AUTHOR_KEY secret." }, 503);
+    if (!safeEqual(context.request.headers.get("x-author-key") || "", context.env.AUTHOR_KEY)) {
+      return json({ error: "Unauthorized" }, 401);
+    }
+  }
   if (!content) return json({ error: "Content is required" }, 400);
   if (content.length > MAX_CONTENT[kind]) return json({ error: "Content is too long" }, 400);
   if (contact.length > MAX_CONTACT) return json({ error: "Contact is too long" }, 400);

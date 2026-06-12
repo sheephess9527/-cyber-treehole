@@ -1,5 +1,17 @@
 const ALLOWED_KINDS = new Set(["whisper", "letter", "echo"]);
 
+// Only the site owner may publish to these. "letter" (信箱) stays open to
+// everyone so visitors can still reach out. Authorship is proven with a key
+// kept in the AUTHOR_KEY environment secret — never shipped to the browser.
+const RESTRICTED_KINDS = new Set(["whisper", "echo"]);
+
+function safeEqual(a, b) {
+  if (typeof a !== "string" || typeof b !== "string" || a.length !== b.length) return false;
+  let mismatch = 0;
+  for (let i = 0; i < a.length; i++) mismatch |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return mismatch === 0;
+}
+
 // Per-kind content limits. echo carries an embedded image payload, so it needs
 // more room than a plain text post. Large media should ideally live in R2, but
 // this keeps the bundled-image flow working without a separate storage binding.
@@ -107,6 +119,14 @@ async function handlePosts(request, env) {
 
     if (!ALLOWED_KINDS.has(kind)) {
       return json({ error: "Unsupported post kind." }, 400);
+    }
+    if (RESTRICTED_KINDS.has(kind)) {
+      if (!env.AUTHOR_KEY) {
+        return json({ error: "Author posting is not configured. Set the AUTHOR_KEY secret." }, 503);
+      }
+      if (!safeEqual(request.headers.get("x-author-key") || "", env.AUTHOR_KEY)) {
+        return json({ error: "Unauthorized." }, 401);
+      }
     }
     if (!content) {
       return json({ error: "Content is required." }, 400);
