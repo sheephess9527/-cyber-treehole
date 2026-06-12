@@ -67,17 +67,42 @@ function json(body, status = 200) {
   return new Response(JSON.stringify(body), { status, headers });
 }
 
+// Drop the full-size photo from echo content so the list payload stays small;
+// the full image is fetched per item by id when a detail is opened.
+function lightenEchoContent(contentStr) {
+  try {
+    const obj = JSON.parse(contentStr);
+    if (obj && typeof obj === "object") {
+      const { image, ...rest } = obj;
+      return JSON.stringify(rest);
+    }
+  } catch {}
+  return contentStr;
+}
+
 export async function onRequestGet(context) {
   const db = context.env.DB;
   if (!db) return json({ error: "D1 binding DB is missing" }, 500);
 
   const url = new URL(context.request.url);
+  await ensureSchema(db);
+
+  const idParam = url.searchParams.get("id");
+  if (idParam !== null) {
+    const id = Number(idParam);
+    if (!Number.isInteger(id) || id <= 0) return json({ error: "A valid post id is required" }, 400);
+    const post = await db.prepare(`
+      SELECT id, kind, content, created_at FROM public_posts WHERE id = ?
+    `).bind(id).first();
+    if (!post) return json({ error: "Not found" }, 404);
+    return json({ post });
+  }
+
   const kind = url.searchParams.get("kind") || "whisper";
   const limit = Math.min(Math.max(Number(url.searchParams.get("limit")) || 50, 1), 100);
 
   if (!allowedKinds.has(kind)) return json({ error: "Invalid kind" }, 400);
 
-  await ensureSchema(db);
   const result = await db.prepare(`
     SELECT id, kind, content, created_at
     FROM public_posts
@@ -86,7 +111,9 @@ export async function onRequestGet(context) {
     LIMIT ?
   `).bind(kind, limit).all();
 
-  return json({ posts: result.results || [] });
+  let posts = result.results || [];
+  if (kind === "echo") posts = posts.map((p) => ({ ...p, content: lightenEchoContent(p.content) }));
+  return json({ posts });
 }
 
 export async function onRequestPost(context) {

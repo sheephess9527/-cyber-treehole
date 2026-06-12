@@ -12,6 +12,21 @@ function safeEqual(a, b) {
   return mismatch === 0;
 }
 
+// Echo content embeds a full-size photo. The list endpoint drops it (keeping the
+// small thumb) so the grid payload stays tiny — the full image is fetched per
+// item by id only when a detail is opened. This is what lets the echo page load
+// on memory-constrained browsers like mobile Safari.
+function lightenEchoContent(contentStr) {
+  try {
+    const obj = JSON.parse(contentStr);
+    if (obj && typeof obj === "object") {
+      const { image, ...rest } = obj;
+      return JSON.stringify(rest);
+    }
+  } catch {}
+  return contentStr;
+}
+
 // Per-kind content limits. echo carries an embedded image payload, so it needs
 // more room than a plain text post. Large media should ideally live in R2, but
 // this keeps the bundled-image flow working without a separate storage binding.
@@ -81,6 +96,21 @@ async function handlePosts(request, env) {
   const url = new URL(request.url);
 
   if (request.method === "GET") {
+    const idParam = url.searchParams.get("id");
+    if (idParam !== null) {
+      const id = Number(idParam);
+      if (!Number.isInteger(id) || id <= 0) {
+        return json({ error: "A valid post id is required." }, 400);
+      }
+      const post = await env.DB.prepare(
+        "SELECT id, kind, content, created_at FROM public_posts WHERE id = ?"
+      )
+        .bind(id)
+        .first();
+      if (!post) return json({ error: "Not found." }, 404);
+      return json({ post });
+    }
+
     const kind = url.searchParams.get("kind") || "whisper";
     if (!ALLOWED_KINDS.has(kind)) {
       return json({ error: "Unsupported post kind." }, 400);
@@ -97,7 +127,9 @@ async function handlePosts(request, env) {
       .bind(kind, limit)
       .all();
 
-    return json({ posts: results || [] });
+    let posts = results || [];
+    if (kind === "echo") posts = posts.map((p) => ({ ...p, content: lightenEchoContent(p.content) }));
+    return json({ posts });
   }
 
   if (request.method === "POST") {

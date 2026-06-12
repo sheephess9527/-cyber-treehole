@@ -340,8 +340,8 @@
           img.onload = () => {
             URL.revokeObjectURL(url);
             // Must end up under the 1MB content cap. Leave headroom for the JSON
-            // wrapper (title/body), so target ~640KB of image binary.
-            const BUDGET = 640000;
+            // wrapper plus the embedded thumbnail, so target ~600KB of binary.
+            const BUDGET = 600000;
             const fits = (dataUrl) => dataUrl.length * 0.75 <= BUDGET;
             let edge = maxEdge;
             let dataUrl = "";
@@ -378,6 +378,42 @@
           reader.onerror = reject;
           reader.readAsDataURL(file);
         });
+      }
+
+      // Tiny preview (~15-30KB) stored alongside the full photo. The echo list
+      // ships only thumbs so the grid loads fast even on mobile Safari; the
+      // full image is fetched per item when a detail is opened.
+      function makeThumb(dataUrl, maxEdge = 420, quality = 0.55) {
+        return new Promise((resolve) => {
+          if (!dataUrl) { resolve(""); return; }
+          const img = new Image();
+          img.onload = () => {
+            const scale = Math.min(1, maxEdge / Math.max(img.width, img.height));
+            const w = Math.max(1, Math.round(img.width * scale));
+            const h = Math.max(1, Math.round(img.height * scale));
+            const canvas = document.createElement("canvas");
+            canvas.width = w;
+            canvas.height = h;
+            canvas.getContext("2d").drawImage(img, 0, 0, w, h);
+            resolve(canvas.toDataURL("image/jpeg", quality));
+          };
+          img.onerror = () => resolve("");
+          img.src = dataUrl;
+        });
+      }
+
+      async function fetchEchoImage(id, item) {
+        if (!id || !cloudEnabled || item._loadingImage || item.image) return;
+        item._loadingImage = true;
+        try {
+          const res = await fetch(`${API_POSTS}?id=${encodeURIComponent(id)}`, { headers: { "Accept": "application/json" } });
+          if (res.ok) {
+            const data = await res.json();
+            const parsed = JSON.parse(data.post.content);
+            item.image = parsed.image || item.thumb || images.entrance;
+            if (tab === "echoes" && activeEcho !== null) renderEchoes();
+          }
+        } catch {} finally { item._loadingImage = false; }
       }
 
       function stamp() {
@@ -532,11 +568,12 @@
                   title: parsed.title || "未命名",
                   body: parsed.body || "",
                   date: parsed.date || item.time,
-                  image: parsed.image || images.entrance,
+                  thumb: parsed.thumb || "",   // grid preview; list omits the full image
+                  image: parsed.image || "",   // lazy-loaded by id when a detail opens
                   personal: false
                 };
               } catch {
-                return { id: item.id, title: "回响", body: item.text, date: item.time, image: images.entrance, personal: false };
+                return { id: item.id, title: "回响", body: item.text, date: item.time, thumb: "", image: "", personal: false };
               }
             });
           })
@@ -674,12 +711,16 @@
         if (activeEcho !== null) {
           const item = items[activeEcho];
           if (item) {
+            // Full photo is fetched on demand; show the thumb meanwhile.
+            if (!item.image && item.id) fetchEchoImage(item.id, item);
+            const loadingImage = !item.image && !!item.id;
             shell(`
               <main class="reader fade">
                 <button class="ghost-button serif" onclick="go('echoes')">[ 返回 ]</button>
                 ${isAuthor() && item.id ? `<button class="ghost-button serif" onclick="deleteEcho(${item.id})">[ 删除 ]</button>` : ""}
                 ${item.personal ? `<button class="ghost-button serif" onclick="removeEcho(${activeEcho})">[ 移除 ]</button>` : ""}
-                <div class="reader-image"><img src="${safe(safeImage(item.image))}" alt=""></div>
+                <div class="reader-image"><img src="${safe(safeImage(item.image || item.thumb))}" alt=""></div>
+                ${loadingImage ? `<p class="status-line">正在载入原图...</p>` : ""}
                 <time>${safe(item.date)}${item.personal ? " · 仅本机未同步" : ""}</time>
                 <h1 class="serif">${safe(item.title)}</h1>
                 <p class="reader-body serif">${safe(item.body)}</p>
@@ -710,7 +751,7 @@
             <section class="grid">
               ${items.map((item, index) => `
                 <button class="card fade" onclick="go('echoes/${index}')">
-                  <div class="card-frame"><img src="${safe(safeImage(item.image))}" alt=""></div>
+                  <div class="card-frame"><img loading="lazy" src="${safe(safeImage(item.thumb || item.image))}" alt=""></div>
                   <h2 class="serif">${safe(item.title)}</h2>
                   <time>${safe(item.date)}${item.personal ? " · 仅本机未同步" : ""}</time>
                 </button>
@@ -753,13 +794,14 @@
             if (status) status.textContent = "正在收进回响...";
 
             const imageData = draftPhoto || images.entrance;
-            const echoContent = JSON.stringify({ title, body, image: imageData });
+            const thumb = await makeThumb(imageData);
+            const echoContent = JSON.stringify({ title, body, image: imageData, thumb });
 
             try {
               const created = await createShared("echo", echoContent);
               // Stored in the cloud, so show it from the shared list only.
               // Writing a local copy too would double it after a reload.
-              sharedEchoes = [{ title, body, date: day(), image: imageData, personal: false }, ...(sharedEchoes || [])];
+              sharedEchoes = [{ id: created.id, title, body, date: day(), thumb, image: imageData, personal: false }, ...(sharedEchoes || [])];
               draftPhoto = "";
               if (status) status.textContent = "已收进云端回响！";
               setTimeout(() => renderEchoes(), 800);
