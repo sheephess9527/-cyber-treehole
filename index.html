@@ -472,8 +472,7 @@
         try {
           await deleteShared(id);
           sharedEchoes = (sharedEchoes || []).filter((item) => item.id !== id);
-          activeEcho = null;
-          renderEchoes();
+          go("echoes");
         } catch (err) { window.alert(deleteErrorMessage(err)); }
       }
 
@@ -539,8 +538,26 @@
       }
 
       function enter() {
-        document.querySelector(".entrance").classList.add("hide");
-        setTimeout(renderApp, 680);
+        const entrance = document.querySelector(".entrance");
+        if (entrance) entrance.classList.add("hide");
+        setTimeout(() => { location.hash = "whispers"; }, 680);
+      }
+
+      const TABS = ["whispers", "echoes", "about"];
+      function parseHash() {
+        const raw = location.hash.replace(/^#\/?/, "");
+        if (!raw) return null;
+        const [name, sub] = raw.split("/");
+        if (name === "echoes") return { tab: "echoes", echo: sub !== undefined && sub !== "" ? Number(sub) : null };
+        if (TABS.includes(name)) return { tab: name, echo: null };
+        return null;
+      }
+      function applyRoute() {
+        const route = parseHash();
+        if (!route) { activeEcho = null; renderEntrance(); return; }
+        tab = route.tab;
+        activeEcho = tab === "echoes" && Number.isInteger(route.echo) ? route.echo : null;
+        renderApp();
       }
 
       function renderEntrance() {
@@ -569,7 +586,13 @@
           </div>
         `;
       }
-      function switchTab(next) { tab = next; activeEcho = null; renderApp(); }
+      function switchTab(next) { go(next); }
+      // Navigate by URL hash so the browser back button and refresh both work.
+      // Re-render explicitly when the hash would not actually change.
+      function go(hash) {
+        if (location.hash === "#" + hash) applyRoute();
+        else location.hash = hash;
+      }
 
       function renderApp() {
         if (tab === "whispers") renderWhispers();
@@ -633,19 +656,24 @@
         loadEchoes();  // 加载云端回响
         if (activeEcho !== null) {
           const item = items[activeEcho];
-          if (!item) { activeEcho = null; renderEchoes(); return; }
-          shell(`
-            <main class="reader fade">
-              <button class="ghost-button serif" onclick="activeEcho=null; renderEchoes()">[ 返回 ]</button>
-              ${isAuthor() && item.id ? `<button class="ghost-button serif" onclick="deleteEcho(${item.id})">[ 删除 ]</button>` : ""}
-              ${item.personal ? `<button class="ghost-button serif" onclick="removeEcho(${activeEcho})">[ 移除 ]</button>` : ""}
-              <div class="reader-image"><img src="${safe(safeImage(item.image))}" alt=""></div>
-              <time>${safe(item.date)}${item.personal ? " · 仅本机未同步" : ""}</time>
-              <h1 class="serif">${safe(item.title)}</h1>
-              <p class="reader-body serif">${safe(item.body)}</p>
-            </main>
-          `);
-          return;
+          if (item) {
+            shell(`
+              <main class="reader fade">
+                <button class="ghost-button serif" onclick="go('echoes')">[ 返回 ]</button>
+                ${isAuthor() && item.id ? `<button class="ghost-button serif" onclick="deleteEcho(${item.id})">[ 删除 ]</button>` : ""}
+                ${item.personal ? `<button class="ghost-button serif" onclick="removeEcho(${activeEcho})">[ 移除 ]</button>` : ""}
+                <div class="reader-image"><img src="${safe(safeImage(item.image))}" alt=""></div>
+                <time>${safe(item.date)}${item.personal ? " · 仅本机未同步" : ""}</time>
+                <h1 class="serif">${safe(item.title)}</h1>
+                <p class="reader-body serif">${safe(item.body)}</p>
+              </main>
+            `);
+            return;
+          }
+          // Detail not available yet. If echoes are still loading (e.g. a
+          // deep-linked /echoes/N on refresh), keep activeEcho so loadEchoes
+          // re-renders into the detail; otherwise drop to the grid.
+          if (!loadingEchoes) activeEcho = null;
         }
         shell(`
           <main class="fade">
@@ -664,7 +692,7 @@
             <p class="status-line" id="echoStatus"></p>
             <section class="grid">
               ${items.map((item, index) => `
-                <button class="card fade" onclick="activeEcho=${index}; renderEchoes()">
+                <button class="card fade" onclick="go('echoes/${index}')">
                   <div class="card-frame"><img src="${safe(safeImage(item.image))}" alt=""></div>
                   <h2 class="serif">${safe(item.title)}</h2>
                   <time>${safe(item.date)}${item.personal ? " · 仅本机未同步" : ""}</time>
@@ -742,10 +770,9 @@
         const publicCount = (sharedEchoes || []).length;
         const localIndex = index - publicCount;
         const custom = read(storage.echoes, []);
-        if (localIndex < 0 || localIndex >= custom.length) { activeEcho = null; renderEchoes(); return; }
+        if (localIndex < 0 || localIndex >= custom.length) { go("echoes"); return; }
         write(storage.echoes, custom.filter((_, itemIndex) => itemIndex !== localIndex));
-        activeEcho = null;
-        renderEchoes();
+        go("echoes");
       }
 
       function renderAbout() {
@@ -822,7 +849,10 @@
         reader.readAsText(file, "utf-8");
       }
 
-      renderEntrance();
+      // The URL hash is the source of truth for which view is shown, so a
+      // refresh stays on the current tab and the back button works.
+      window.addEventListener("hashchange", applyRoute);
+      applyRoute();
 
       // Register the service worker so the site can be installed to the home
       // screen and opened offline. Only over http(s); never on file://.
