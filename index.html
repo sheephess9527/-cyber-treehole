@@ -340,8 +340,8 @@
           img.onload = () => {
             URL.revokeObjectURL(url);
             // Must end up under the 1MB content cap. Leave headroom for the JSON
-            // wrapper plus the embedded thumbnail, so target ~600KB of binary.
-            const BUDGET = 600000;
+            // wrapper plus the embedded thumbnail (~130KB), so target ~560KB.
+            const BUDGET = 560000;
             const fits = (dataUrl) => dataUrl.length * 0.75 <= BUDGET;
             let edge = maxEdge;
             let dataUrl = "";
@@ -383,19 +383,35 @@
       // Tiny preview (~15-30KB) stored alongside the full photo. The echo list
       // ships only thumbs so the grid loads fast even on mobile Safari; the
       // full image is fetched per item when a detail is opened.
-      function makeThumb(dataUrl, maxEdge = 420, quality = 0.55) {
+      function makeThumb(dataUrl, maxEdge = 640, quality = 0.68) {
         return new Promise((resolve) => {
           if (!dataUrl) { resolve(""); return; }
           const img = new Image();
           img.onload = () => {
-            const scale = Math.min(1, maxEdge / Math.max(img.width, img.height));
-            const w = Math.max(1, Math.round(img.width * scale));
-            const h = Math.max(1, Math.round(img.height * scale));
-            const canvas = document.createElement("canvas");
-            canvas.width = w;
-            canvas.height = h;
-            canvas.getContext("2d").drawImage(img, 0, 0, w, h);
-            resolve(canvas.toDataURL("image/jpeg", quality));
+            // Cap the thumb so full image + thumb + wrapper stay under the cap.
+            // Step quality down, then shrink dimensions, until it fits.
+            const THUMB_BUDGET = 130000;
+            const fits = (d) => d.length * 0.75 <= THUMB_BUDGET;
+            let edge = maxEdge;
+            let out = "";
+            for (let attempt = 0; attempt < 6; attempt++) {
+              const scale = Math.min(1, edge / Math.max(img.width, img.height));
+              const w = Math.max(1, Math.round(img.width * scale));
+              const h = Math.max(1, Math.round(img.height * scale));
+              const canvas = document.createElement("canvas");
+              canvas.width = w;
+              canvas.height = h;
+              canvas.getContext("2d").drawImage(img, 0, 0, w, h);
+              let q = quality;
+              out = canvas.toDataURL("image/jpeg", q);
+              while (!fits(out) && q > 0.4) {
+                q = Math.round((q - 0.08) * 100) / 100;
+                out = canvas.toDataURL("image/jpeg", q);
+              }
+              if (fits(out)) break;
+              edge = Math.round(edge * 0.85);
+            }
+            resolve(out);
           };
           img.onerror = () => resolve("");
           img.src = dataUrl;
