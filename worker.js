@@ -158,6 +158,21 @@ async function handlePosts(request, env) {
     );
   }
 
+  if (request.method === "DELETE") {
+    if (!env.AUTHOR_KEY) {
+      return json({ error: "Author actions are not configured. Set the AUTHOR_KEY secret." }, 503);
+    }
+    if (!safeEqual(request.headers.get("x-author-key") || "", env.AUTHOR_KEY)) {
+      return json({ error: "Unauthorized." }, 401);
+    }
+    const id = Number(url.searchParams.get("id"));
+    if (!Number.isInteger(id) || id <= 0) {
+      return json({ error: "A valid post id is required." }, 400);
+    }
+    await env.DB.prepare("DELETE FROM public_posts WHERE id = ?").bind(id).run();
+    return json({ deleted: true, id });
+  }
+
   return json({ error: "Method not allowed." }, 405);
 }
 

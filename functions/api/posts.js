@@ -130,3 +130,21 @@ export async function onRequestPost(context) {
 
   return json({ post: inserted }, 201);
 }
+
+export async function onRequestDelete(context) {
+  const db = context.env.DB;
+  if (!db) return json({ error: "D1 binding DB is missing" }, 500);
+
+  if (!context.env.AUTHOR_KEY) return json({ error: "Author actions are not configured. Set the AUTHOR_KEY secret." }, 503);
+  if (!safeEqual(context.request.headers.get("x-author-key") || "", context.env.AUTHOR_KEY)) {
+    return json({ error: "Unauthorized" }, 401);
+  }
+
+  const url = new URL(context.request.url);
+  const id = Number(url.searchParams.get("id"));
+  if (!Number.isInteger(id) || id <= 0) return json({ error: "A valid post id is required" }, 400);
+
+  await ensureSchema(db);
+  await db.prepare("DELETE FROM public_posts WHERE id = ?").bind(id).run();
+  return json({ deleted: true, id });
+}

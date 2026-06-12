@@ -427,6 +427,55 @@
         };
       }
 
+      async function deleteShared(id) {
+        if (!cloudEnabled) throw new Error("cloud disabled");
+        const headers = { "Accept": "application/json" };
+        const key = getAuthorKey();
+        if (key) headers["x-author-key"] = key;
+        const response = await fetch(`${API_POSTS}?id=${encodeURIComponent(id)}`, { method: "DELETE", headers });
+        if (!response.ok) {
+          const data = await response.json().catch(() => ({}));
+          const error = new Error(data.error || "delete failed");
+          error.status = response.status;
+          throw error;
+        }
+        return true;
+      }
+
+      function deleteErrorMessage(err) {
+        if (err && err.status === 401) return "作者密钥无效，无法删除。请重新登录作者。";
+        if (err && err.status === 503) return "服务器未配置作者密钥（AUTHOR_KEY）。";
+        return "云端暂不可用，删除失败，请稍后再试。";
+      }
+
+      async function deleteWhisper(id) {
+        if (!window.confirm("确定删除这条呢喃？删除后无法恢复。")) return;
+        try {
+          await deleteShared(id);
+          sharedWhispers = (sharedWhispers || []).filter((item) => item.id !== id);
+          renderWhispers();
+        } catch (err) { window.alert(deleteErrorMessage(err)); }
+      }
+
+      async function deleteEcho(id) {
+        if (!window.confirm("确定删除这条回响（含照片）？删除后无法恢复。")) return;
+        try {
+          await deleteShared(id);
+          sharedEchoes = (sharedEchoes || []).filter((item) => item.id !== id);
+          activeEcho = null;
+          renderEchoes();
+        } catch (err) { window.alert(deleteErrorMessage(err)); }
+      }
+
+      async function deleteLetter(id) {
+        if (!window.confirm("确定删除这条留言？删除后无法恢复。")) return;
+        try {
+          await deleteShared(id);
+          sharedLetters = (sharedLetters || []).filter((item) => item.id !== id);
+          renderAbout();
+        } catch (err) { window.alert(deleteErrorMessage(err)); }
+      }
+
       function loadWhispers() {
         if (sharedWhispers || loadingWhispers) return;
         loadingWhispers = true;
@@ -460,6 +509,7 @@
               try {
                 const parsed = JSON.parse(item.text);
                 return {
+                  id: item.id,
                   title: parsed.title || "未命名",
                   body: parsed.body || "",
                   date: parsed.date || item.time,
@@ -467,7 +517,7 @@
                   personal: false
                 };
               } catch {
-                return { title: "回响", body: item.text, date: item.time, image: images.entrance, personal: false };
+                return { id: item.id, title: "回响", body: item.text, date: item.time, image: images.entrance, personal: false };
               }
             });
           })
@@ -532,7 +582,7 @@
             <p class="status-line" id="whisperStatus">${loadingWhispers ? "正在读取云端呢喃..." : ""}</p>
             ${isAuthor() && localItems.length ? `<button class="ghost-button serif" onclick="clearWhispers()">[ 清空本机缓存记录 ]</button>` : ""}
             <section class="timeline">
-              ${items.map(item => `<article class="fade"><time>[${safe(item.time)}]</time><p class="serif">${safe(item.text)}</p></article>`).join("")}
+              ${items.map(item => `<article class="fade"><time>[${safe(item.time)}]</time><p class="serif">${safe(item.text)}</p>${isAuthor() && item.id ? `<button class="ghost-button serif" onclick="deleteWhisper(${item.id})">[ 删除 ]</button>` : ""}</article>`).join("")}
             </section>
           </main>
         `);
@@ -577,6 +627,7 @@
           shell(`
             <main class="reader fade">
               <button class="ghost-button serif" onclick="activeEcho=null; renderEchoes()">[ 返回 ]</button>
+              ${isAuthor() && item.id ? `<button class="ghost-button serif" onclick="deleteEcho(${item.id})">[ 删除 ]</button>` : ""}
               ${item.personal ? `<button class="ghost-button serif" onclick="removeEcho(${activeEcho})">[ 移除 ]</button>` : ""}
               <div class="reader-image"><img src="${safe(safeImage(item.image))}" alt=""></div>
               <time>${safe(item.date)}</time>
@@ -699,7 +750,7 @@
               <button class="ghost-button serif" type="submit">[ 投递 ]</button>
               <p id="mailStatus" class="status-line">${loadingLetters ? "正在读取云端留言..." : ""}</p>
             </form>
-            ${letters.length ? `<section class="letter-list">${letters.slice(0, 12).map(letter => `<article><time>[${safe(letter.time)}]</time><p class="serif">${safe(letter.text || letter.message || "")}</p></article>`).join("")}</section>` : ""}
+            ${letters.length ? `<section class="letter-list">${letters.slice(0, 12).map(letter => `<article><time>[${safe(letter.time)}]</time><p class="serif">${safe(letter.text || letter.message || "")}</p>${isAuthor() && letter.id ? `<button class="ghost-button serif" onclick="deleteLetter(${letter.id})">[ 删除 ]</button>` : ""}</article>`).join("")}</section>` : ""}
             <section class="backup">
               <button class="ghost-button serif" onclick="exportBackup()">[ 导出备份 ]</button>
               <label class="ghost-button serif">[ 导入备份 ]<input class="sr-only" id="backupInput" type="file" accept="application/json"></label>
