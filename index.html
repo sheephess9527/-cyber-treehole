@@ -329,20 +329,30 @@
           const img = new Image();
           img.onload = () => {
             URL.revokeObjectURL(url);
-            const scale = Math.min(1, maxEdge / Math.max(img.width, img.height));
-            const width = Math.max(1, Math.round(img.width * scale));
-            const height = Math.max(1, Math.round(img.height * scale));
-            const canvas = document.createElement("canvas");
-            canvas.width = width;
-            canvas.height = height;
-            canvas.getContext("2d").drawImage(img, 0, 0, width, height);
-            // ~700KB binary keeps the JSON payload under the 1MB content cap.
-            const BUDGET = 700000;
-            let q = quality;
-            let dataUrl = canvas.toDataURL("image/jpeg", q);
-            while (dataUrl.length * 0.75 > BUDGET && q > 0.4) {
-              q = Math.round((q - 0.1) * 100) / 100;
+            // Must end up under the 1MB content cap. Leave headroom for the JSON
+            // wrapper (title/body), so target ~640KB of image binary.
+            const BUDGET = 640000;
+            const fits = (dataUrl) => dataUrl.length * 0.75 <= BUDGET;
+            let edge = maxEdge;
+            let dataUrl = "";
+            // Step the long edge down; within each size, step quality down too.
+            // Guarantees the result fits so every echo can sync to the cloud.
+            for (let attempt = 0; attempt < 7; attempt++) {
+              const scale = Math.min(1, edge / Math.max(img.width, img.height));
+              const width = Math.max(1, Math.round(img.width * scale));
+              const height = Math.max(1, Math.round(img.height * scale));
+              const canvas = document.createElement("canvas");
+              canvas.width = width;
+              canvas.height = height;
+              canvas.getContext("2d").drawImage(img, 0, 0, width, height);
+              let q = quality;
               dataUrl = canvas.toDataURL("image/jpeg", q);
+              while (!fits(dataUrl) && q > 0.4) {
+                q = Math.round((q - 0.1) * 100) / 100;
+                dataUrl = canvas.toDataURL("image/jpeg", q);
+              }
+              if (fits(dataUrl)) break;     // small enough → done
+              edge = Math.round(edge * 0.8); // still too big → shrink and retry
             }
             resolve(dataUrl);
           };
@@ -630,7 +640,7 @@
               ${isAuthor() && item.id ? `<button class="ghost-button serif" onclick="deleteEcho(${item.id})">[ 删除 ]</button>` : ""}
               ${item.personal ? `<button class="ghost-button serif" onclick="removeEcho(${activeEcho})">[ 移除 ]</button>` : ""}
               <div class="reader-image"><img src="${safe(safeImage(item.image))}" alt=""></div>
-              <time>${safe(item.date)}</time>
+              <time>${safe(item.date)}${item.personal ? " · 仅本机未同步" : ""}</time>
               <h1 class="serif">${safe(item.title)}</h1>
               <p class="reader-body serif">${safe(item.body)}</p>
             </main>
@@ -657,7 +667,7 @@
                 <button class="card fade" onclick="activeEcho=${index}; renderEchoes()">
                   <div class="card-frame"><img src="${safe(safeImage(item.image))}" alt=""></div>
                   <h2 class="serif">${safe(item.title)}</h2>
-                  <time>${safe(item.date)}</time>
+                  <time>${safe(item.date)}${item.personal ? " · 仅本机未同步" : ""}</time>
                 </button>
               `).join("")}
             </section>
@@ -713,11 +723,13 @@
                 if (status) status.textContent = err.status === 401 ? "作者密钥无效，无法发布。请重新登录作者。" : "服务器未配置作者密钥（AUTHOR_KEY）。";
                 return;
               }
-              // Fallback to local
+              // Fallback to local (only visible on this device).
               const custom = read(storage.echoes, []);
               write(storage.echoes, [{ title, body, date: day(), image: imageData, personal: true }, ...custom]);
               draftPhoto = "";
-              if (status) status.textContent = "云端暂不可用，已保存在本机。";
+              if (status) status.textContent = err && err.status === 400
+                ? "照片过大，未能上云，仅存本机（其他设备看不到）。"
+                : "云端暂不可用，仅保存在本机（其他设备看不到）。";
               setTimeout(() => renderEchoes(), 800);
             }
           };
