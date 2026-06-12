@@ -40,12 +40,15 @@
       .stage { min-height: 100vh; transition: opacity 720ms cubic-bezier(.22,.61,.36,1), transform 720ms cubic-bezier(.22,.61,.36,1); }
 
       .entrance {
-        position: fixed;
-        inset: 0;
+        position: relative;
         z-index: 20;
+        min-height: 100vh;
+        min-height: 100dvh;
         display: grid;
         grid-template-rows: 1fr auto;
+        gap: 24px;
         padding: 40px 24px;
+        padding-bottom: max(40px, env(safe-area-inset-bottom));
         background:
           radial-gradient(circle at 50% 42%, rgba(176, 161, 139, 0.055), transparent 32rem),
           var(--void);
