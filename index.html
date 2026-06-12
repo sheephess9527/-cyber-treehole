@@ -110,9 +110,17 @@
         max-width: 1120px;
         margin: 0 auto;
         padding: 20px 24px;
+        position: relative;
         display: flex;
         justify-content: center;
         gap: clamp(24px, 6vw, 56px);
+      }
+      .nav-back {
+        position: absolute;
+        left: 16px;
+        top: 50%;
+        transform: translateY(-50%);
+        padding: 8px 10px;
       }
       .nav button {
         border: 0;
@@ -243,6 +251,8 @@
         .echo-form, .grid { grid-template-columns: 1fr; }
         .nav-inner { gap: 18px; padding-inline: 16px; }
         .nav button { font-size: 11px; letter-spacing: .12em; }
+        .nav-back { left: 6px; font-size: 16px; }
+        .nav-back-text { display: none; }
       }
     </style>
   </head>
@@ -577,6 +587,7 @@
           <div class="app fade">
             <nav class="nav">
               <div class="nav-inner">
+                <button class="nav-back serif" onclick="goBack()" aria-label="返回上一级">‹<span class="nav-back-text"> 返回</span></button>
                 <button class="${tab === "whispers" ? "active" : ""}" onclick="switchTab('whispers')">呢喃墙</button>
                 <button class="${tab === "echoes" ? "active" : ""}" onclick="switchTab('echoes')">光影与回响</button>
                 <button class="${tab === "about" ? "active" : ""}" onclick="switchTab('about')">留白与信箱</button>
@@ -587,6 +598,12 @@
         `;
       }
       function switchTab(next) { go(next); }
+      // Visible "up one level" control — needed in the installed PWA, which has
+      // no browser chrome. Echo detail → echo grid; any tab → entrance.
+      function goBack() {
+        if (tab === "echoes" && activeEcho !== null) { go("echoes"); return; }
+        location.hash = "";
+      }
       // Navigate by URL hash so the browser back button and refresh both work.
       // Re-render explicitly when the hash would not actually change.
       function go(hash) {
