@@ -1,0 +1,17 @@
+{
+  "name": "赛博自留地",
+  "short_name": "自留地",
+  "description": "一个无功利记录、反算法侵蚀的个人精神自留地。",
+  "lang": "zh-CN",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#020202",
+  "theme_color": "#0B0A09",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

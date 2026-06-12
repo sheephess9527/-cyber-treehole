@@ -49,6 +49,14 @@ Database: treehole-db
 
 `functions/api/posts.js` 会在第一次读写时自动创建表。也可以手动执行 `schema.sql`。
 
+## 装到 iPhone 主屏（PWA）
+
+本站支持「添加到主屏幕」，装好后像 App 一样全屏运行，作者密钥保存在本机、点开即已登录。
+
+- iPhone：用 **Safari** 打开网站 → 底部分享按钮 → **添加到主屏幕**。
+- 相关文件：`manifest.webmanifest`、`sw.js`（Service Worker）、`icon-192.png` / `icon-512.png` / `apple-touch-icon.png`，均作为静态资源随站点提供。
+- 缓存策略：`/api/*` 永不缓存（发帖/读取始终实时）；页面走网络优先（在线即取最新部署）；图标等静态资源走 stale-while-revalidate。改版后想强制刷新缓存，把 `sw.js` 里的 `VERSION` 加一即可。
+
 ## 作者密钥（谁能发布）
 
 呢喃墙与光影回响改为**仅作者可发布**，信箱留言仍对所有访客开放。校验在后端完成，密钥保存在环境变量里，绝不写进代码或下发给浏览器。

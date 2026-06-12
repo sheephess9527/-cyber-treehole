@@ -5,6 +5,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content="一个无功利记录、反算法侵蚀的个人精神自留地。" />
     <meta name="theme-color" content="#0B0A09" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="icon" type="image/png" href="/icon-192.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="自留地" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="mobile-web-app-capable" content="yes" />
     <title>赛博自留地</title>
     <style>
       :root {
@@ -752,6 +759,14 @@
       }
 
       renderEntrance();
+
+      // Register the service worker so the site can be installed to the home
+      // screen and opened offline. Only over http(s); never on file://.
+      if (cloudEnabled && "serviceWorker" in navigator) {
+        window.addEventListener("load", () => {
+          navigator.serviceWorker.register("/sw.js").catch(() => {});
+        });
+      }
     </script>
   </body>
 </html>
