@@ -53,9 +53,12 @@ async function ensureSchema(db) {
       kind TEXT NOT NULL,
       content TEXT NOT NULL,
       contact TEXT,
-      created_at TEXT NOT NULL
+      created_at TEXT NOT NULL,
+      reply TEXT
     )
   `).run();
+  // Migration for databases created before the reply column existed.
+  try { await db.prepare("ALTER TABLE public_posts ADD COLUMN reply TEXT").run(); } catch {}
   await db.prepare(`
     CREATE INDEX IF NOT EXISTS idx_public_posts_kind_created
     ON public_posts (kind, created_at DESC)
@@ -92,7 +95,7 @@ export async function onRequestGet(context) {
     const id = Number(idParam);
     if (!Number.isInteger(id) || id <= 0) return json({ error: "A valid post id is required" }, 400);
     const post = await db.prepare(`
-      SELECT id, kind, content, created_at FROM public_posts WHERE id = ?
+      SELECT id, kind, content, created_at, reply FROM public_posts WHERE id = ?
     `).bind(id).first();
     if (!post) return json({ error: "Not found" }, 404);
     return json({ post });
@@ -104,7 +107,7 @@ export async function onRequestGet(context) {
   if (!allowedKinds.has(kind)) return json({ error: "Invalid kind" }, 400);
 
   const result = await db.prepare(`
-    SELECT id, kind, content, created_at
+    SELECT id, kind, content, created_at, reply
     FROM public_posts
     WHERE kind = ?
     ORDER BY created_at DESC, id DESC
@@ -174,4 +177,33 @@ export async function onRequestDelete(context) {
   await ensureSchema(db);
   await db.prepare("DELETE FROM public_posts WHERE id = ?").bind(id).run();
   return json({ deleted: true, id });
+}
+
+export async function onRequestPut(context) {
+  const db = context.env.DB;
+  if (!db) return json({ error: "D1 binding DB is missing" }, 500);
+
+  if (!context.env.AUTHOR_KEY) return json({ error: "Author actions are not configured. Set the AUTHOR_KEY secret." }, 503);
+  if (!safeEqual(context.request.headers.get("x-author-key") || "", context.env.AUTHOR_KEY)) {
+    return json({ error: "Unauthorized" }, 401);
+  }
+
+  const url = new URL(context.request.url);
+  const id = Number(url.searchParams.get("id"));
+  if (!Number.isInteger(id) || id <= 0) return json({ error: "A valid post id is required" }, 400);
+
+  let body;
+  try {
+    body = await context.request.json();
+  } catch {
+    return json({ error: "Invalid JSON" }, 400);
+  }
+  const reply = String(body.reply || "").trim();
+  if (reply.length > 2000) return json({ error: "Reply is too long" }, 400);
+
+  await ensureSchema(db);
+  await db.prepare("UPDATE public_posts SET reply = ? WHERE id = ? AND kind = 'letter'")
+    .bind(reply || null, id)
+    .run();
+  return json({ updated: true, id, reply });
 }

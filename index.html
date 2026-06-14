@@ -238,6 +238,7 @@
       .mailbox { margin-top: 76px; display: grid; gap: 28px; }
       .letter-list, .backup { margin-top: 48px; padding-top: 36px; border-top: 1px solid var(--line); }
       .letter-list article { margin-bottom: 28px; }
+      .letter-reply { margin-top: 10px; padding: 10px 0 2px 14px; border-left: 2px solid rgba(176, 161, 139, .5); color: var(--accent); }
       .backup { display: flex; flex-wrap: wrap; gap: 20px; }
       .status-line { color: var(--muted); font-size: 13px; line-height: 1.8; min-height: 1.8em; }
       .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); }
@@ -471,7 +472,8 @@
         return (data.posts || []).map((item) => ({
           id: item.id,
           time: toDisplayTime(item.created_at),
-          text: item.content || ""
+          text: item.content || "",
+          reply: item.reply || ""
         }));
       }
 
@@ -518,6 +520,45 @@
         if (err && err.status === 401) return "作者密钥无效，无法删除。请重新登录作者。";
         if (err && err.status === 503) return "服务器未配置作者密钥（AUTHOR_KEY）。";
         return "云端暂不可用，删除失败，请稍后再试。";
+      }
+
+      function actionErrorMessage(err, action) {
+        if (err && err.status === 401) return `作者密钥无效，无法${action}。请重新登录作者。`;
+        if (err && err.status === 503) return "服务器未配置作者密钥（AUTHOR_KEY）。";
+        if (err && err.status === 400) return `${action}内容过长或格式有误。`;
+        return `云端暂不可用，${action}失败，请稍后再试。`;
+      }
+
+      async function replyShared(id, reply) {
+        if (!cloudEnabled) throw new Error("cloud disabled");
+        const headers = { "Content-Type": "application/json", "Accept": "application/json" };
+        const key = getAuthorKey();
+        if (key) headers["x-author-key"] = key;
+        const response = await fetch(`${API_POSTS}?id=${encodeURIComponent(id)}`, {
+          method: "PUT",
+          headers,
+          body: JSON.stringify({ reply })
+        });
+        if (!response.ok) {
+          const data = await response.json().catch(() => ({}));
+          const error = new Error(data.error || "reply failed");
+          error.status = response.status;
+          throw error;
+        }
+        return true;
+      }
+
+      async function replyLetter(id) {
+        const letter = (sharedLetters || []).find((item) => item.id === id);
+        const existing = letter ? (letter.reply || "") : "";
+        const text = window.prompt("回复这条留言（清空并确定可删除回复）：", existing);
+        if (text === null) return;
+        const reply = text.trim();
+        try {
+          await replyShared(id, reply);
+          if (letter) letter.reply = reply;
+          renderAbout();
+        } catch (err) { window.alert(actionErrorMessage(err, "回复")); }
       }
 
       async function deleteWhisper(id) {
@@ -864,7 +905,7 @@
               <button class="ghost-button serif" type="submit">[ 投递 ]</button>
               <p id="mailStatus" class="status-line">${loadingLetters ? "正在读取云端留言..." : ""}</p>
             </form>
-            ${letters.length ? `<section class="letter-list">${letters.slice(0, 12).map(letter => `<article><time>[${safe(letter.time)}]</time><p class="serif">${safe(letter.text || letter.message || "")}</p>${isAuthor() && letter.id ? `<button class="ghost-button serif" onclick="deleteLetter(${letter.id})">[ 删除 ]</button>` : ""}</article>`).join("")}</section>` : ""}
+            ${letters.length ? `<section class="letter-list">${letters.slice(0, 12).map(letter => `<article><time>[${safe(letter.time)}]</time><p class="serif">${safe(letter.text || letter.message || "")}</p>${letter.reply ? `<p class="serif letter-reply">树洞回复：${safe(letter.reply)}</p>` : ""}${isAuthor() && letter.id ? `<button class="ghost-button serif" onclick="replyLetter(${letter.id})">[ ${letter.reply ? "编辑回复" : "回复"} ]</button><button class="ghost-button serif" onclick="deleteLetter(${letter.id})">[ 删除 ]</button>` : ""}</article>`).join("")}</section>` : ""}
             <section class="backup">
               <button class="ghost-button serif" onclick="exportBackup()">[ 导出备份 ]</button>
               <label class="ghost-button serif">[ 导入备份 ]<input class="sr-only" id="backupInput" type="file" accept="application/json"></label>

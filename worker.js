@@ -64,10 +64,13 @@ async function ensureSchema(db) {
         kind TEXT NOT NULL,
         content TEXT NOT NULL,
         contact TEXT,
-        created_at TEXT NOT NULL
+        created_at TEXT NOT NULL,
+        reply TEXT
       )`
     )
     .run();
+  // Migration for databases created before the reply column existed.
+  try { await db.prepare("ALTER TABLE public_posts ADD COLUMN reply TEXT").run(); } catch {}
   await db
     .prepare(
       `CREATE INDEX IF NOT EXISTS idx_public_posts_kind_created
@@ -103,7 +106,7 @@ async function handlePosts(request, env) {
         return json({ error: "A valid post id is required." }, 400);
       }
       const post = await env.DB.prepare(
-        "SELECT id, kind, content, created_at FROM public_posts WHERE id = ?"
+        "SELECT id, kind, content, created_at, reply FROM public_posts WHERE id = ?"
       )
         .bind(id)
         .first();
@@ -122,7 +125,7 @@ async function handlePosts(request, env) {
     );
 
     const { results } = await env.DB.prepare(
-      "SELECT id, kind, content, created_at FROM public_posts WHERE kind = ? ORDER BY id DESC LIMIT ?"
+      "SELECT id, kind, content, created_at, reply FROM public_posts WHERE kind = ? ORDER BY id DESC LIMIT ?"
     )
       .bind(kind, limit)
       .all();
@@ -203,6 +206,33 @@ async function handlePosts(request, env) {
     }
     await env.DB.prepare("DELETE FROM public_posts WHERE id = ?").bind(id).run();
     return json({ deleted: true, id });
+  }
+
+  if (request.method === "PUT") {
+    if (!env.AUTHOR_KEY) {
+      return json({ error: "Author actions are not configured. Set the AUTHOR_KEY secret." }, 503);
+    }
+    if (!safeEqual(request.headers.get("x-author-key") || "", env.AUTHOR_KEY)) {
+      return json({ error: "Unauthorized." }, 401);
+    }
+    const id = Number(url.searchParams.get("id"));
+    if (!Number.isInteger(id) || id <= 0) {
+      return json({ error: "A valid post id is required." }, 400);
+    }
+    let body;
+    try {
+      body = await request.json();
+    } catch {
+      return json({ error: "Invalid JSON body." }, 400);
+    }
+    const reply = String(body.reply || "").trim();
+    if (reply.length > 2000) {
+      return json({ error: "Reply is too long." }, 400);
+    }
+    await env.DB.prepare("UPDATE public_posts SET reply = ? WHERE id = ? AND kind = 'letter'")
+      .bind(reply || null, id)
+      .run();
+    return json({ updated: true, id, reply });
   }
 
   return json({ error: "Method not allowed." }, 405);
