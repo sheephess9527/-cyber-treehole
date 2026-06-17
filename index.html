@@ -660,6 +660,14 @@
         return true;
       }
 
+      // Keep the localStorage cache in sync after a local mutation so the next
+      // instant-load reflects the change instead of briefly showing stale data.
+      function cacheShared(kind) {
+        if (kind === "whisper" && sharedWhispers) write(storage.cache.whispers, sharedWhispers);
+        if (kind === "letter" && sharedLetters) write(storage.cache.letters, sharedLetters);
+        if (kind === "echo" && sharedEchoes) write(storage.cache.echoes, sharedEchoes);
+      }
+
       async function replyLetter(id) {
         const letter = (sharedLetters || []).find((item) => item.id === id);
         const existing = letter ? (letter.reply || "") : "";
@@ -669,6 +677,7 @@
         try {
           await replyShared(id, reply);
           if (letter) letter.reply = reply;
+          cacheShared("letter");
           renderAbout();
         } catch (err) { window.alert(actionErrorMessage(err, "回复")); }
       }
@@ -678,6 +687,7 @@
         try {
           await deleteShared(id);
           sharedWhispers = (sharedWhispers || []).filter((item) => item.id !== id);
+          cacheShared("whisper");
           renderWhispers();
         } catch (err) { window.alert(deleteErrorMessage(err)); }
       }
@@ -687,6 +697,7 @@
         try {
           await deleteShared(id);
           sharedEchoes = (sharedEchoes || []).filter((item) => item.id !== id);
+          cacheShared("echo");
           go("echoes");
         } catch (err) { window.alert(deleteErrorMessage(err)); }
       }
@@ -696,6 +707,7 @@
         try {
           await deleteShared(id);
           sharedLetters = (sharedLetters || []).filter((item) => item.id !== id);
+          cacheShared("letter");
           renderAbout();
         } catch (err) { window.alert(deleteErrorMessage(err)); }
       }
@@ -720,25 +732,17 @@
         });
       }
 
-      // Stale-while-revalidate loader: show cached data immediately so the tab
-      // feels instant, then fetch fresh data in the background and re-render
-      // only if something actually changed.
+      // Stale-while-revalidate loader: on first load this session, show cached
+      // data instantly, then revalidate ONCE in the background. The
+      // `sharedX || loadingX` guard means later re-renders never re-fetch.
       function loadWhispers() {
-        if (loadingWhispers) return;
+        if (sharedWhispers || loadingWhispers) return;
         const cached = read(storage.cache.whispers, null);
-        if (cached && !sharedWhispers) {
+        if (cached) {
           sharedWhispers = cached;
           if (tab === "whispers") renderWhispers();
-        }
-        if (sharedWhispers && !cached) {
-          // Already live (just published) — persist so next open is instant.
-          write(storage.cache.whispers, sharedWhispers);
-        }
-        if (sharedWhispers) {
-          // Already populated — revalidate quietly in background.
           fetchShared("whisper").then((items) => {
-            const fresh = JSON.stringify(items);
-            if (fresh !== JSON.stringify(sharedWhispers)) {
+            if (JSON.stringify(items) !== JSON.stringify(sharedWhispers)) {
               sharedWhispers = items;
               write(storage.cache.whispers, items);
               if (tab === "whispers") renderWhispers();
@@ -754,19 +758,13 @@
       }
 
       function loadLetters() {
-        if (loadingLetters) return;
+        if (sharedLetters || loadingLetters) return;
         const cached = read(storage.cache.letters, null);
-        if (cached && !sharedLetters) {
+        if (cached) {
           sharedLetters = cached;
           if (tab === "about") renderAbout();
-        }
-        if (sharedLetters && !cached) {
-          write(storage.cache.letters, sharedLetters);
-        }
-        if (sharedLetters) {
           fetchShared("letter").then((items) => {
-            const fresh = JSON.stringify(items);
-            if (fresh !== JSON.stringify(sharedLetters)) {
+            if (JSON.stringify(items) !== JSON.stringify(sharedLetters)) {
               sharedLetters = items;
               write(storage.cache.letters, items);
               if (tab === "about") renderAbout();
@@ -782,22 +780,17 @@
       }
 
       function loadEchoes() {
-        if (loadingEchoes) return;
+        if (sharedEchoes || loadingEchoes) return;
+        echoesError = false;
         const cached = read(storage.cache.echoes, null);
-        if (cached && !sharedEchoes) {
+        if (cached) {
           sharedEchoes = cached;
           if (tab === "echoes") renderEchoes();
-        }
-        if (sharedEchoes && !cached) {
-          write(storage.cache.echoes, sharedEchoes);
-        }
-        echoesError = false;
-        if (sharedEchoes) {
           fetchShared("echo").then((items) => {
             const parsed = parseEchoItems(items);
-            const fresh = JSON.stringify(parsed.map(e => e.id));
-            const current = JSON.stringify((sharedEchoes || []).map(e => e.id));
-            if (fresh !== current) {
+            const freshIds = JSON.stringify(parsed.map((e) => e.id));
+            const curIds = JSON.stringify((sharedEchoes || []).map((e) => e.id));
+            if (freshIds !== curIds) {
               sharedEchoes = parsed;
               write(storage.cache.echoes, parsed);
               if (tab === "echoes") renderEchoes();
@@ -916,6 +909,7 @@
           try {
             const created = await createShared("whisper", value);
             sharedWhispers = [created, ...(sharedWhispers || [])];
+            cacheShared("whisper");
             clearDraft("whisper");
             autoBackup();
             renderWhispers();
@@ -1062,6 +1056,7 @@
               const echoContent = JSON.stringify({ title, body, image: imageUrl, thumb });
               const created = await createShared("echo", echoContent);
               sharedEchoes = [{ id: created.id, title, body, date: day(), thumb, image: imageUrl, personal: false }, ...(sharedEchoes || [])];
+              cacheShared("echo");
               draftPhoto = "";
               clearDraft("echo");
               autoBackup();
@@ -1149,6 +1144,7 @@
           try {
             const created = await createShared("letter", message || "（无正文）", contact);
             sharedLetters = [created, ...(sharedLetters || [])];
+            cacheShared("letter");
             clearDraft("letter");
             autoBackup();
             document.getElementById("mailStatus").textContent = "已放进树洞。";
