@@ -284,7 +284,6 @@
         backupAt: "treehole.backupAt",
         cache: {
           whispers: "treehole.cache.whispers",
-          echoes:   "treehole.cache.echoes",
           letters:  "treehole.cache.letters",
         },
       };
@@ -665,7 +664,7 @@
       function cacheShared(kind) {
         if (kind === "whisper" && sharedWhispers) write(storage.cache.whispers, sharedWhispers);
         if (kind === "letter" && sharedLetters) write(storage.cache.letters, sharedLetters);
-        if (kind === "echo" && sharedEchoes) write(storage.cache.echoes, sharedEchoes);
+        // Echoes are intentionally not cached — see loadEchoes.
       }
 
       async function replyLetter(id) {
@@ -697,7 +696,6 @@
         try {
           await deleteShared(id);
           sharedEchoes = (sharedEchoes || []).filter((item) => item.id !== id);
-          cacheShared("echo");
           go("echoes");
         } catch (err) { window.alert(deleteErrorMessage(err)); }
       }
@@ -779,31 +777,16 @@
           .finally(() => { loadingLetters = false; if (tab === "about") renderAbout(); });
       }
 
+      // Echoes are NOT cached in localStorage: their embedded base64 thumbnails
+      // make the cache large and fragile (quota errors, stale historical posts).
+      // Correctness matters more than the small speed win here, so always fetch
+      // once per session. The R2 photo URLs already make the network load light.
       function loadEchoes() {
         if (sharedEchoes || loadingEchoes) return;
-        echoesError = false;
-        const cached = read(storage.cache.echoes, null);
-        if (cached) {
-          sharedEchoes = cached;
-          if (tab === "echoes") renderEchoes();
-          fetchShared("echo").then((items) => {
-            const parsed = parseEchoItems(items);
-            const freshIds = JSON.stringify(parsed.map((e) => e.id));
-            const curIds = JSON.stringify((sharedEchoes || []).map((e) => e.id));
-            if (freshIds !== curIds) {
-              sharedEchoes = parsed;
-              write(storage.cache.echoes, parsed);
-              if (tab === "echoes") renderEchoes();
-            }
-          }).catch(() => {});
-          return;
-        }
         loadingEchoes = true;
+        echoesError = false;
         fetchShared("echo")
-          .then((items) => {
-            sharedEchoes = parseEchoItems(items);
-            write(storage.cache.echoes, sharedEchoes);
-          })
+          .then((items) => { sharedEchoes = parseEchoItems(items); })
           .catch(() => { sharedEchoes = []; echoesError = true; })
           .finally(() => { loadingEchoes = false; if (tab === "echoes") renderEchoes(); });
       }
@@ -1056,7 +1039,6 @@
               const echoContent = JSON.stringify({ title, body, image: imageUrl, thumb });
               const created = await createShared("echo", echoContent);
               sharedEchoes = [{ id: created.id, title, body, date: day(), thumb, image: imageUrl, personal: false }, ...(sharedEchoes || [])];
-              cacheShared("echo");
               draftPhoto = "";
               clearDraft("echo");
               autoBackup();
@@ -1248,6 +1230,10 @@
         };
         reader.readAsText(file, "utf-8");
       }
+
+      // One-time cleanup: a prior version cached echoes (with base64 thumbs) in
+      // localStorage, which could grow huge and stall the echo tab. Remove it.
+      try { localStorage.removeItem("treehole.cache.echoes"); } catch {}
 
       // The URL hash is the source of truth for which view is shown, so a
       // refresh stays on the current tab and the back button works.
