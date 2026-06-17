@@ -281,7 +281,12 @@
         letters: "treehole.letters",
         authorKey: "treehole.authorKey",
         drafts: "treehole.drafts",
-        backupAt: "treehole.backupAt"
+        backupAt: "treehole.backupAt",
+        cache: {
+          whispers: "treehole.cache.whispers",
+          echoes:   "treehole.cache.echoes",
+          letters:  "treehole.cache.letters",
+        },
       };
       const API_POSTS = "/api/posts";
       const cloudEnabled = location.protocol === "http:" || location.protocol === "https:";
@@ -695,58 +700,119 @@
         } catch (err) { window.alert(deleteErrorMessage(err)); }
       }
 
+      // Parse a raw list of fetchShared items into the echo shape used by the UI.
+      function parseEchoItems(items) {
+        return items.map(item => {
+          try {
+            const parsed = JSON.parse(item.text);
+            return {
+              id: item.id,
+              title: parsed.title || "未命名",
+              body: parsed.body || "",
+              date: parsed.date || item.time,
+              thumb: parsed.thumb || "",
+              image: parsed.image || "",
+              personal: false
+            };
+          } catch {
+            return { id: item.id, title: "回响", body: item.text, date: item.time, thumb: "", image: "", personal: false };
+          }
+        });
+      }
+
+      // Stale-while-revalidate loader: show cached data immediately so the tab
+      // feels instant, then fetch fresh data in the background and re-render
+      // only if something actually changed.
       function loadWhispers() {
-        if (sharedWhispers || loadingWhispers) return;
+        if (loadingWhispers) return;
+        const cached = read(storage.cache.whispers, null);
+        if (cached && !sharedWhispers) {
+          sharedWhispers = cached;
+          if (tab === "whispers") renderWhispers();
+        }
+        if (sharedWhispers && !cached) {
+          // Already live (just published) — persist so next open is instant.
+          write(storage.cache.whispers, sharedWhispers);
+        }
+        if (sharedWhispers) {
+          // Already populated — revalidate quietly in background.
+          fetchShared("whisper").then((items) => {
+            const fresh = JSON.stringify(items);
+            if (fresh !== JSON.stringify(sharedWhispers)) {
+              sharedWhispers = items;
+              write(storage.cache.whispers, items);
+              if (tab === "whispers") renderWhispers();
+            }
+          }).catch(() => {});
+          return;
+        }
         loadingWhispers = true;
         fetchShared("whisper")
-          .then((items) => { sharedWhispers = items; })
+          .then((items) => { sharedWhispers = items; write(storage.cache.whispers, items); })
           .catch(() => { sharedWhispers = []; })
-          .finally(() => {
-            loadingWhispers = false;
-            if (tab === "whispers") renderWhispers();
-          });
+          .finally(() => { loadingWhispers = false; if (tab === "whispers") renderWhispers(); });
       }
 
       function loadLetters() {
-        if (sharedLetters || loadingLetters) return;
+        if (loadingLetters) return;
+        const cached = read(storage.cache.letters, null);
+        if (cached && !sharedLetters) {
+          sharedLetters = cached;
+          if (tab === "about") renderAbout();
+        }
+        if (sharedLetters && !cached) {
+          write(storage.cache.letters, sharedLetters);
+        }
+        if (sharedLetters) {
+          fetchShared("letter").then((items) => {
+            const fresh = JSON.stringify(items);
+            if (fresh !== JSON.stringify(sharedLetters)) {
+              sharedLetters = items;
+              write(storage.cache.letters, items);
+              if (tab === "about") renderAbout();
+            }
+          }).catch(() => {});
+          return;
+        }
         loadingLetters = true;
         fetchShared("letter")
-          .then((items) => { sharedLetters = items; })
+          .then((items) => { sharedLetters = items; write(storage.cache.letters, items); })
           .catch(() => { sharedLetters = []; })
-          .finally(() => {
-            loadingLetters = false;
-            if (tab === "about") renderAbout();
-          });
+          .finally(() => { loadingLetters = false; if (tab === "about") renderAbout(); });
       }
 
       function loadEchoes() {
-        if (sharedEchoes || loadingEchoes) return;
-        loadingEchoes = true;
+        if (loadingEchoes) return;
+        const cached = read(storage.cache.echoes, null);
+        if (cached && !sharedEchoes) {
+          sharedEchoes = cached;
+          if (tab === "echoes") renderEchoes();
+        }
+        if (sharedEchoes && !cached) {
+          write(storage.cache.echoes, sharedEchoes);
+        }
         echoesError = false;
+        if (sharedEchoes) {
+          fetchShared("echo").then((items) => {
+            const parsed = parseEchoItems(items);
+            const fresh = JSON.stringify(parsed.map(e => e.id));
+            const current = JSON.stringify((sharedEchoes || []).map(e => e.id));
+            if (fresh !== current) {
+              sharedEchoes = parsed;
+              write(storage.cache.echoes, parsed);
+              if (tab === "echoes") renderEchoes();
+            }
+          }).catch(() => {});
+          return;
+        }
+        loadingEchoes = true;
         fetchShared("echo")
           .then((items) => {
-            sharedEchoes = items.map(item => {
-              try {
-                const parsed = JSON.parse(item.text);
-                return {
-                  id: item.id,
-                  title: parsed.title || "未命名",
-                  body: parsed.body || "",
-                  date: parsed.date || item.time,
-                  thumb: parsed.thumb || "",   // grid preview; list omits the full image
-                  image: parsed.image || "",   // lazy-loaded by id when a detail opens
-                  personal: false
-                };
-              } catch {
-                return { id: item.id, title: "回响", body: item.text, date: item.time, thumb: "", image: "", personal: false };
-              }
-            });
+            sharedEchoes = parseEchoItems(items);
+            write(storage.cache.echoes, sharedEchoes);
           })
           .catch(() => { sharedEchoes = []; echoesError = true; })
-          .finally(() => {
-            loadingEchoes = false;
-            if (tab === "echoes") renderEchoes();
-          });
+          .finally(() => { loadingEchoes = false; if (tab === "echoes") renderEchoes(); });
       }
 
       function enter() {
