@@ -123,16 +123,35 @@ export async function onRequestGet(context) {
 
   if (!allowedKinds.has(kind)) return json({ error: "Invalid kind" }, 400);
 
-  const result = await db.prepare(`
-    SELECT id, kind, content, created_at, reply
-    FROM public_posts
-    WHERE kind = ?
-    ORDER BY created_at DESC, id DESC
-    LIMIT ?
-  `).bind(kind, limit).all();
-
-  let posts = result.results || [];
-  if (kind === "echo") posts = posts.map((p) => ({ ...p, content: lightenEchoContent(p.content) }));
+  let posts;
+  if (kind === "echo") {
+    // Strip inline base64 photos at the database layer so D1 never returns
+    // multi-megabyte rows — pulling them all overflowed the query response and
+    // broke the echo grid. R2-backed echoes keep their short URL; only "data:"
+    // base64 blobs are removed. Full photos stay reachable via the by-id query.
+    const result = await db.prepare(`
+      SELECT id, kind,
+        CASE WHEN json_valid(content)
+                  AND substr(json_extract(content, '$.image'), 1, 5) = 'data:'
+             THEN json_remove(content, '$.image')
+             ELSE content END AS content,
+        created_at, reply
+      FROM public_posts
+      WHERE kind = ?
+      ORDER BY created_at DESC, id DESC
+      LIMIT ?
+    `).bind(kind, limit).all();
+    posts = (result.results || []).map((p) => ({ ...p, content: lightenEchoContent(p.content) }));
+  } else {
+    const result = await db.prepare(`
+      SELECT id, kind, content, created_at, reply
+      FROM public_posts
+      WHERE kind = ?
+      ORDER BY created_at DESC, id DESC
+      LIMIT ?
+    `).bind(kind, limit).all();
+    posts = result.results || [];
+  }
   return json({ posts });
 }
 

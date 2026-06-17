@@ -14,5 +14,11 @@
       "database_name": "treehole-db",
       "database_id": "4c54f1b1-5690-4eb1-9d68-290899129e87"
     }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "PHOTOS",
+      "bucket_name": "treehole-photos"
+    }
   ]
 }

@@ -139,14 +139,34 @@ async function handlePosts(request, env) {
       100
     );
 
-    const { results } = await env.DB.prepare(
-      "SELECT id, kind, content, created_at, reply FROM public_posts WHERE kind = ? ORDER BY id DESC LIMIT ?"
-    )
-      .bind(kind, limit)
-      .all();
-
-    let posts = results || [];
-    if (kind === "echo") posts = posts.map((p) => ({ ...p, content: lightenEchoContent(p.content) }));
+    let posts;
+    if (kind === "echo") {
+      // Strip inline base64 photos at the database layer so D1 never has to
+      // return multi-megabyte rows. Pulling the full base64 for every echo was
+      // overflowing the query response and making the whole grid fail to load.
+      // R2-backed echoes keep their short image URL untouched; only "data:"
+      // base64 blobs are removed. The full photo for old posts is still
+      // reachable through the by-id detail query above.
+      const { results } = await env.DB.prepare(
+        `SELECT id, kind,
+           CASE WHEN json_valid(content)
+                     AND substr(json_extract(content, '$.image'), 1, 5) = 'data:'
+                THEN json_remove(content, '$.image')
+                ELSE content END AS content,
+           created_at, reply
+         FROM public_posts WHERE kind = ? ORDER BY id DESC LIMIT ?`
+      )
+        .bind(kind, limit)
+        .all();
+      posts = (results || []).map((p) => ({ ...p, content: lightenEchoContent(p.content) }));
+    } else {
+      const { results } = await env.DB.prepare(
+        "SELECT id, kind, content, created_at, reply FROM public_posts WHERE kind = ? ORDER BY id DESC LIMIT ?"
+      )
+        .bind(kind, limit)
+        .all();
+      posts = results || [];
+    }
     return json({ posts });
   }
 
@@ -282,16 +302,25 @@ async function handleMigrate(request, env) {
   if (!env.PHOTOS) return json({ error: "R2 binding PHOTOS is not configured." }, 500);
 
   await ensureSchema(env.DB);
-  const { results } = await env.DB.prepare(
-    "SELECT id, content FROM public_posts WHERE kind = 'echo'"
+  // Pull ids only first. The base64 rows can be megabytes each, so selecting
+  // every content at once would overflow the query response — the same failure
+  // that breaks the echo grid. Fetching one row at a time keeps each query small.
+  const idRows = await env.DB.prepare(
+    "SELECT id FROM public_posts WHERE kind = 'echo' ORDER BY id"
   ).all();
+  const ids = (idRows.results || []).map((r) => r.id);
 
   let migrated = 0, skipped = 0, errors = 0;
 
-  for (const post of results || []) {
+  for (const id of ids) {
     try {
+      const row = await env.DB.prepare("SELECT content FROM public_posts WHERE id = ?")
+        .bind(id)
+        .first();
+      if (!row) { skipped++; continue; }
+
       let obj;
-      try { obj = JSON.parse(post.content); } catch { skipped++; continue; }
+      try { obj = JSON.parse(row.content); } catch { skipped++; continue; }
       if (!obj || typeof obj !== "object" || !obj.image || !obj.image.startsWith("data:")) {
         skipped++;
         continue;
@@ -314,7 +343,7 @@ async function handleMigrate(request, env) {
       const r2Url = `${R2_PUBLIC_URL}/${key}`;
 
       await env.DB.prepare("UPDATE public_posts SET content = ? WHERE id = ?")
-        .bind(JSON.stringify({ ...obj, image: r2Url }), post.id)
+        .bind(JSON.stringify({ ...obj, image: r2Url }), id)
         .run();
 
       migrated++;
@@ -323,7 +352,7 @@ async function handleMigrate(request, env) {
     }
   }
 
-  return json({ migrated, skipped, errors, total: (results || []).length });
+  return json({ migrated, skipped, errors, total: ids.length });
 }
 
 export default {

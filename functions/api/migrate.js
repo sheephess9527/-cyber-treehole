@@ -32,16 +32,25 @@ export async function onRequestPost(context) {
   if (!env.DB) return json({ error: "D1 binding DB is not configured." }, 500);
   if (!env.PHOTOS) return json({ error: "R2 binding PHOTOS is not configured." }, 500);
 
-  const { results } = await env.DB.prepare(
-    "SELECT id, content FROM public_posts WHERE kind = 'echo'"
+  // Pull ids only first. The base64 rows can be megabytes each, so selecting
+  // every content at once would overflow the query response — the same failure
+  // that breaks the echo grid. Fetching one row at a time keeps each query small.
+  const idRows = await env.DB.prepare(
+    "SELECT id FROM public_posts WHERE kind = 'echo' ORDER BY id"
   ).all();
+  const ids = (idRows.results || []).map((r) => r.id);
 
   let migrated = 0, skipped = 0, errors = 0;
 
-  for (const post of results || []) {
+  for (const id of ids) {
     try {
+      const row = await env.DB.prepare("SELECT content FROM public_posts WHERE id = ?")
+        .bind(id)
+        .first();
+      if (!row) { skipped++; continue; }
+
       let obj;
-      try { obj = JSON.parse(post.content); } catch { skipped++; continue; }
+      try { obj = JSON.parse(row.content); } catch { skipped++; continue; }
       if (!obj || typeof obj !== "object" || !obj.image || !obj.image.startsWith("data:")) {
         skipped++;
         continue;
@@ -64,7 +73,7 @@ export async function onRequestPost(context) {
       const r2Url = `${R2_PUBLIC_URL}/${key}`;
 
       await env.DB.prepare("UPDATE public_posts SET content = ? WHERE id = ?")
-        .bind(JSON.stringify({ ...obj, image: r2Url }), post.id)
+        .bind(JSON.stringify({ ...obj, image: r2Url }), id)
         .run();
 
       migrated++;
@@ -73,5 +82,5 @@ export async function onRequestPost(context) {
     }
   }
 
-  return json({ migrated, skipped, errors, total: (results || []).length });
+  return json({ migrated, skipped, errors, total: ids.length });
 }
