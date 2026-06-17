@@ -357,6 +357,7 @@
       let loadingWhispers = false;
       let loadingLetters = false;
       let loadingEchoes = false;   // 新增
+      let echoesError = false;     // true when the cloud echo fetch failed
       function safe(str) {
         return String(str || "")
           .replace(/&/g, "&amp;")
@@ -659,8 +660,9 @@
       function loadEchoes() {
         if (sharedEchoes || loadingEchoes) return;
         loadingEchoes = true;
+        echoesError = false;
         fetchShared("echo")
-          .then((items) => { 
+          .then((items) => {
             sharedEchoes = items.map(item => {
               try {
                 const parsed = JSON.parse(item.text);
@@ -678,7 +680,7 @@
               }
             });
           })
-          .catch(() => { sharedEchoes = []; })
+          .catch(() => { sharedEchoes = []; echoesError = true; })
           .finally(() => {
             loadingEchoes = false;
             if (tab === "echoes") renderEchoes();
@@ -848,7 +850,10 @@
                 <button class="ghost-button serif" type="submit">[ 收进回响 ]</button>
               </div>
             </form>` : ""}
-            <p class="status-line" id="echoStatus"></p>
+            <p class="status-line" id="echoStatus">${loadingEchoes ? "正在读取云端回响..." : (echoesError ? "云端暂不可用，回响未能载入，请稍后刷新。" : "")}</p>
+            ${(!loadingEchoes && !echoesError && items.length === 0)
+              ? `<p class="status-line serif">这里还没有回响。${isAuthor() ? "选一张照片，收进第一束光。" : ""}</p>`
+              : ""}
             <section class="grid">
               ${items.map((item, index) => `
                 <button class="card fade" onclick="go('echoes/${index}')">
