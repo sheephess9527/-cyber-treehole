@@ -270,12 +270,69 @@ async function handlePhotos(request, env) {
   return json({ url: `${R2_PUBLIC_URL}/${key}` }, 201);
 }
 
+// One-time migration: moves inline base64 images from old echo posts into R2.
+// Idempotent — posts already pointing at R2 URLs are counted as skipped.
+async function handleMigrate(request, env) {
+  if (request.method !== "POST") return json({ error: "Method not allowed." }, 405);
+  if (!env.AUTHOR_KEY) return json({ error: "Author actions are not configured." }, 503);
+  if (!authMatches(request.headers.get("x-author-key"), env.AUTHOR_KEY)) {
+    return json({ error: "Unauthorized." }, 401);
+  }
+  if (!env.DB) return json({ error: "D1 binding DB is not configured." }, 500);
+  if (!env.PHOTOS) return json({ error: "R2 binding PHOTOS is not configured." }, 500);
+
+  await ensureSchema(env.DB);
+  const { results } = await env.DB.prepare(
+    "SELECT id, content FROM public_posts WHERE kind = 'echo'"
+  ).all();
+
+  let migrated = 0, skipped = 0, errors = 0;
+
+  for (const post of results || []) {
+    try {
+      let obj;
+      try { obj = JSON.parse(post.content); } catch { skipped++; continue; }
+      if (!obj || typeof obj !== "object" || !obj.image || !obj.image.startsWith("data:")) {
+        skipped++;
+        continue;
+      }
+
+      const comma = obj.image.indexOf(",");
+      if (comma === -1) { skipped++; continue; }
+      const meta = obj.image.slice(0, comma);
+      const b64 = obj.image.slice(comma + 1);
+      const mimeMatch = meta.match(/data:([^;]+)/);
+      const mimeType = mimeMatch ? mimeMatch[1] : "image/jpeg";
+      const ext = (mimeType.split("/")[1] || "jpeg").split(";")[0];
+
+      const binary = atob(b64);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+
+      const key = `photos/echo-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+      await env.PHOTOS.put(key, bytes.buffer, { httpMetadata: { contentType: mimeType } });
+      const r2Url = `${R2_PUBLIC_URL}/${key}`;
+
+      await env.DB.prepare("UPDATE public_posts SET content = ? WHERE id = ?")
+        .bind(JSON.stringify({ ...obj, image: r2Url }), post.id)
+        .run();
+
+      migrated++;
+    } catch {
+      errors++;
+    }
+  }
+
+  return json({ migrated, skipped, errors, total: (results || []).length });
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
 
     if (url.pathname === "/api/posts") return handlePosts(request, env);
     if (url.pathname === "/api/photos") return handlePhotos(request, env);
+    if (url.pathname === "/api/migrate") return handleMigrate(request, env);
 
     return env.ASSETS.fetch(request);
   },
