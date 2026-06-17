@@ -12,6 +12,14 @@ function safeEqual(a, b) {
   return mismatch === 0;
 }
 
+// Compare the supplied key against the configured one, trimming both ends.
+// Secrets pasted into the dashboard on a phone often pick up a stray trailing
+// space or newline; without this, that invisible character causes a permanent
+// 401 that no amount of re-login can fix.
+function authMatches(provided, expected) {
+  return safeEqual(String(provided || "").trim(), String(expected || "").trim());
+}
+
 // Echo content embeds a full-size photo. The list endpoint drops it (keeping the
 // small thumb) so the grid payload stays tiny — the full image is fetched per
 // item by id only when a detail is opened. This is what lets the echo page load
@@ -99,6 +107,14 @@ async function handlePosts(request, env) {
   const url = new URL(request.url);
 
   if (request.method === "GET") {
+    // Lets the author confirm their login matches the server without publishing.
+    // Never reveals the key — only whether it is configured and whether it matches.
+    if (url.searchParams.get("check") === "author") {
+      const configured = !!env.AUTHOR_KEY;
+      const ok = configured && authMatches(request.headers.get("x-author-key"), env.AUTHOR_KEY);
+      return json({ configured, ok });
+    }
+
     const idParam = url.searchParams.get("id");
     if (idParam !== null) {
       const id = Number(idParam);
@@ -159,7 +175,7 @@ async function handlePosts(request, env) {
       if (!env.AUTHOR_KEY) {
         return json({ error: "Author posting is not configured. Set the AUTHOR_KEY secret." }, 503);
       }
-      if (!safeEqual(request.headers.get("x-author-key") || "", env.AUTHOR_KEY)) {
+      if (!authMatches(request.headers.get("x-author-key"), env.AUTHOR_KEY)) {
         return json({ error: "Unauthorized." }, 401);
       }
     }
@@ -197,7 +213,7 @@ async function handlePosts(request, env) {
     if (!env.AUTHOR_KEY) {
       return json({ error: "Author actions are not configured. Set the AUTHOR_KEY secret." }, 503);
     }
-    if (!safeEqual(request.headers.get("x-author-key") || "", env.AUTHOR_KEY)) {
+    if (!authMatches(request.headers.get("x-author-key"), env.AUTHOR_KEY)) {
       return json({ error: "Unauthorized." }, 401);
     }
     const id = Number(url.searchParams.get("id"));
@@ -212,7 +228,7 @@ async function handlePosts(request, env) {
     if (!env.AUTHOR_KEY) {
       return json({ error: "Author actions are not configured. Set the AUTHOR_KEY secret." }, 503);
     }
-    if (!safeEqual(request.headers.get("x-author-key") || "", env.AUTHOR_KEY)) {
+    if (!authMatches(request.headers.get("x-author-key"), env.AUTHOR_KEY)) {
       return json({ error: "Unauthorized." }, 401);
     }
     const id = Number(url.searchParams.get("id"));

@@ -286,12 +286,43 @@
         renderApp();
         requestAnimationFrame(() => { const el = document.getElementById("authKeyInput"); if (el) el.focus(); });
       }
-      function submitAuthorKey() {
+      // Confirm a key against the server before trusting it. Returns
+      // { configured, ok } and never sends the key anywhere but our own API.
+      async function verifyAuthorKey(key) {
+        const response = await fetch(`${API_POSTS}?check=author`, {
+          headers: { "Accept": "application/json", "x-author-key": key }
+        });
+        if (!response.ok) throw new Error("verify failed");
+        return response.json();
+      }
+      async function submitAuthorKey() {
         const el = document.getElementById("authKeyInput");
         const value = el ? el.value.trim() : "";
-        authPrompting = false;
-        if (value) { try { localStorage.setItem(storage.authorKey, value); } catch {} }
-        renderApp();
+        const statusEl = document.getElementById("authStatus");
+        if (!value) { authPrompting = false; renderApp(); return; }
+        // Verify against the server so a mismatched key is caught here, with a
+        // clear message, instead of silently failing later when publishing.
+        if (statusEl) statusEl.textContent = "正在验证密钥...";
+        try {
+          const result = await verifyAuthorKey(value);
+          if (!result.configured) {
+            if (statusEl) statusEl.textContent = "服务器尚未配置作者密钥（AUTHOR_KEY）。";
+            return;
+          }
+          if (!result.ok) {
+            if (statusEl) statusEl.textContent = "密钥与服务器不符，请检查后重试。";
+            return;
+          }
+          try { localStorage.setItem(storage.authorKey, value); } catch {}
+          authPrompting = false;
+          renderApp();
+        } catch {
+          // Server unreachable — store the key anyway so offline use still works;
+          // publishing will re-check when the network is back.
+          try { localStorage.setItem(storage.authorKey, value); } catch {}
+          authPrompting = false;
+          renderApp();
+        }
       }
       function cancelAuthor() { authPrompting = false; renderApp(); }
       function logoutAuthor() {
@@ -929,6 +960,7 @@
                          <input id="authKeyInput" type="text" inputmode="text" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" placeholder="输入作者密钥" />
                          <button class="ghost-button serif" onclick="submitAuthorKey()">[ 确定 ]</button>
                          <button class="ghost-button serif" onclick="cancelAuthor()">[ 取消 ]</button>
+                         <span id="authStatus" class="status-line"></span>
                        </span>`
                     : `<button class="ghost-button serif" onclick="promptAuthor()">[ 作者登录 ]</button>`)}
             </section>

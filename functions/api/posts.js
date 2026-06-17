@@ -17,6 +17,14 @@ function safeEqual(a, b) {
   return mismatch === 0;
 }
 
+// Compare the supplied key against the configured one, trimming both ends.
+// Secrets pasted into the dashboard on a phone often pick up a stray trailing
+// space or newline; without this, that invisible character causes a permanent
+// 401 that no amount of re-login can fix.
+function authMatches(provided, expected) {
+  return safeEqual(String(provided || "").trim(), String(expected || "").trim());
+}
+
 // Per-kind content limits. echo carries an embedded image payload, so it needs
 // more room than a plain text post. Large media should ideally live in R2, but
 // this keeps the bundled-image flow working without a separate storage binding.
@@ -90,6 +98,14 @@ export async function onRequestGet(context) {
   const url = new URL(context.request.url);
   await ensureSchema(db);
 
+  // Lets the author confirm their login matches the server without publishing.
+  // Never reveals the key — only whether it is configured and whether it matches.
+  if (url.searchParams.get("check") === "author") {
+    const configured = !!context.env.AUTHOR_KEY;
+    const ok = configured && authMatches(context.request.headers.get("x-author-key"), context.env.AUTHOR_KEY);
+    return json({ configured, ok });
+  }
+
   const idParam = url.searchParams.get("id");
   if (idParam !== null) {
     const id = Number(idParam);
@@ -142,7 +158,7 @@ export async function onRequestPost(context) {
   if (!allowedKinds.has(kind)) return json({ error: "Invalid kind" }, 400);
   if (restrictedKinds.has(kind)) {
     if (!context.env.AUTHOR_KEY) return json({ error: "Author posting is not configured. Set the AUTHOR_KEY secret." }, 503);
-    if (!safeEqual(context.request.headers.get("x-author-key") || "", context.env.AUTHOR_KEY)) {
+    if (!authMatches(context.request.headers.get("x-author-key"), context.env.AUTHOR_KEY)) {
       return json({ error: "Unauthorized" }, 401);
     }
   }
@@ -166,7 +182,7 @@ export async function onRequestDelete(context) {
   if (!db) return json({ error: "D1 binding DB is missing" }, 500);
 
   if (!context.env.AUTHOR_KEY) return json({ error: "Author actions are not configured. Set the AUTHOR_KEY secret." }, 503);
-  if (!safeEqual(context.request.headers.get("x-author-key") || "", context.env.AUTHOR_KEY)) {
+  if (!authMatches(context.request.headers.get("x-author-key"), context.env.AUTHOR_KEY)) {
     return json({ error: "Unauthorized" }, 401);
   }
 
@@ -184,7 +200,7 @@ export async function onRequestPut(context) {
   if (!db) return json({ error: "D1 binding DB is missing" }, 500);
 
   if (!context.env.AUTHOR_KEY) return json({ error: "Author actions are not configured. Set the AUTHOR_KEY secret." }, 503);
-  if (!safeEqual(context.request.headers.get("x-author-key") || "", context.env.AUTHOR_KEY)) {
+  if (!authMatches(context.request.headers.get("x-author-key"), context.env.AUTHOR_KEY)) {
     return json({ error: "Unauthorized" }, 401);
   }
 
