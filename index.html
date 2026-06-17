@@ -815,6 +815,16 @@
           .finally(() => { loadingEchoes = false; if (tab === "echoes") renderEchoes(); });
       }
 
+      // Manual retry after a failed echo load. The load guard treats the
+      // post-failure [] as "already loaded", so a user-initiated reset is the
+      // only way to re-fetch without a full page reload.
+      function retryEchoes() {
+        sharedEchoes = null;
+        echoesError = false;
+        loadEchoes();
+        renderEchoes();
+      }
+
       function enter() {
         const entrance = document.querySelector(".entrance");
         if (entrance) entrance.classList.add("hide");
@@ -983,7 +993,10 @@
                 <button class="ghost-button serif" type="submit">[ 收进回响 ]</button>
               </div>
             </form>` : ""}
-            <p class="status-line" id="echoStatus">${loadingEchoes ? "正在读取云端回响..." : (echoesError ? "云端暂不可用，回响未能载入，请稍后刷新。" : "")}</p>
+            <p class="status-line" id="echoStatus">${loadingEchoes ? "正在读取云端回响..." : (echoesError ? "云端暂不可用，回响未能载入。" : "")}</p>
+            ${(!loadingEchoes && echoesError)
+              ? `<button class="ghost-button serif" onclick="retryEchoes()">[ 重新加载 ]</button>`
+              : ""}
             ${(!loadingEchoes && !echoesError && items.length === 0)
               ? `<p class="status-line serif">这里还没有回响。${isAuthor() ? "选一张照片，收进第一束光。" : ""}</p>`
               : ""}
@@ -1171,11 +1184,16 @@
       // quota; full-resolution photos live in the cloud and the manual export.
       function autoBackup() {
         try {
+          // Preserve sections that aren't loaded this session: a null shared
+          // array means "unknown", not "empty". Without this, publishing in a
+          // session where (say) letters were never opened would overwrite a
+          // good backup's letters with an empty list.
+          const prev = read("treehole.autobackup", {}) || {};
           const snap = {
             savedAt: new Date().toISOString(),
-            whispers: (sharedWhispers || []).map((w) => ({ time: w.time, text: w.text })),
-            letters: (sharedLetters || []).map((l) => ({ time: l.time, text: l.text, reply: l.reply || "" })),
-            echoes: (sharedEchoes || []).map((e) => ({ title: e.title, body: e.body, date: e.date }))
+            whispers: sharedWhispers ? sharedWhispers.map((w) => ({ time: w.time, text: w.text })) : (prev.whispers || []),
+            letters: sharedLetters ? sharedLetters.map((l) => ({ time: l.time, text: l.text, reply: l.reply || "" })) : (prev.letters || []),
+            echoes: sharedEchoes ? sharedEchoes.map((e) => ({ title: e.title, body: e.body, date: e.date })) : (prev.echoes || [])
           };
           write("treehole.autobackup", snap);
           localStorage.setItem(storage.backupAt, snap.savedAt);
