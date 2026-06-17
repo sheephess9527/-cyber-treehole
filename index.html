@@ -350,30 +350,6 @@
         renderApp();
       }
 
-      async function migratePhotos() {
-        const btn = document.getElementById("migrateBtn");
-        const status = document.getElementById("migrateStatus");
-        if (btn) btn.disabled = true;
-        if (status) status.textContent = "迁移中，请稍候…";
-        try {
-          const res = await fetch("/api/migrate", {
-            method: "POST",
-            headers: { "x-author-key": getAuthorKey() },
-          });
-          const j = await res.json();
-          if (!res.ok) {
-            if (status) status.textContent = `失败：${j.error || res.status}`;
-          } else {
-            if (status) status.textContent = `完成：迁移 ${j.migrated} 张，跳过 ${j.skipped} 张${j.errors ? `，出错 ${j.errors} 张` : ""}。`;
-            if (j.migrated > 0) { sharedEchoes = null; loadEchoes(); }
-          }
-        } catch (err) {
-          if (status) status.textContent = `网络错误：${err.message}`;
-        } finally {
-          if (btn) btn.disabled = false;
-        }
-      }
-
       const svg = (body) => "data:image/svg+xml;charset=utf-8," + encodeURIComponent(body);
       const images = {
         entrance: svg(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 860"><rect width="1400" height="860" fill="#080706"/><rect y="500" width="1400" height="360" fill="#15120f"/><circle cx="900" cy="300" r="126" fill="#786b57" opacity=".22"/><path d="M0 492 C180 462 308 505 456 478 C626 446 746 492 890 466 C1072 430 1224 468 1400 430 L1400 860 L0 860 Z" fill="#24201a"/><path d="M0 580 C220 552 394 585 598 554 C774 526 910 582 1098 538 C1230 512 1326 520 1400 504 L1400 860 L0 860 Z" fill="#171512"/><rect y="448" width="1400" height="2" fill="#51483d" opacity=".9"/><rect y="450" width="1400" height="138" fill="url(#mist)" opacity=".86"/><filter id="grain"><feTurbulence type="fractalNoise" baseFrequency=".72" numOctaves="3"/><feColorMatrix type="saturate" values="0"/><feComponentTransfer><feFuncA type="table" tableValues="0 .09"/></feComponentTransfer></filter><rect width="1400" height="860" filter="url(#grain)" opacity=".68"/><defs><linearGradient id="mist" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#d8ccb8" stop-opacity=".19"/><stop offset=".5" stop-color="#8a8a8a" stop-opacity=".11"/><stop offset="1" stop-color="#000" stop-opacity="0"/></linearGradient></defs></svg>`),
@@ -1127,9 +1103,7 @@
               <label class="ghost-button serif">[ 导入备份 ]<input class="sr-only" id="backupInput" type="file" accept="application/json"></label>
               <span id="backupStatus" class="status-line">${backupAgeLabel()}</span>
               ${isAuthor()
-                ? `<button class="ghost-button serif" onclick="logoutAuthor()">[ 退出作者 ]</button>
-                   <button class="ghost-button serif" id="migrateBtn" onclick="migratePhotos()">[ 迁移旧照片至云端 ]</button>
-                   <span id="migrateStatus" class="status-line"></span>`
+                ? `<button class="ghost-button serif" onclick="logoutAuthor()">[ 退出作者 ]</button>`
                 : (authPrompting
                     ? `<span class="author-login">
                          <input id="authKeyInput" type="text" inputmode="text" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" placeholder="输入作者密钥" />
