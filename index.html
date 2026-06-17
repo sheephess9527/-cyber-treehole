@@ -249,6 +249,19 @@
         from { opacity: 0; transform: translateY(12px); }
         to { opacity: 1; transform: translateY(0); }
       }
+      /* Visible keyboard focus for anyone navigating without a pointer. */
+      :focus-visible { outline: 1px solid var(--accent); outline-offset: 3px; border-radius: 1px; }
+      /* Honour the OS "reduce motion" setting — this is a quiet, contemplative
+         space, and some readers are sensitive to movement. */
+      @media (prefers-reduced-motion: reduce) {
+        *, *::before, *::after {
+          animation-duration: .001ms !important;
+          animation-iteration-count: 1 !important;
+          transition-duration: .001ms !important;
+          scroll-behavior: auto !important;
+        }
+        .fade { animation: none !important; }
+      }
       @media (max-width: 760px) {
         main { padding-top: 56px; }
         .echo-form, .grid { grid-template-columns: 1fr; }
@@ -266,7 +279,9 @@
         whispers: "treehole.whispers",
         echoes: "treehole.echoes",
         letters: "treehole.letters",
-        authorKey: "treehole.authorKey"
+        authorKey: "treehole.authorKey",
+        drafts: "treehole.drafts",
+        backupAt: "treehole.backupAt"
       };
       const API_POSTS = "/api/posts";
       const cloudEnabled = location.protocol === "http:" || location.protocol === "https:";
@@ -501,6 +516,24 @@
         try {
           localStorage.setItem(key, JSON.stringify(data));
         } catch {}
+      }
+
+      // Draft autosave: a half-written whisper / echo / letter survives an
+      // accidental refresh, tab switch, or the app being backgrounded on iOS.
+      function loadDraft(kind) {
+        const all = read(storage.drafts, {});
+        return (all && all[kind]) || {};
+      }
+      function saveDraft(kind, fields) {
+        const all = read(storage.drafts, {});
+        const hasContent = Object.values(fields).some((v) => String(v || "").trim());
+        if (hasContent) all[kind] = fields; else delete all[kind];
+        write(storage.drafts, all);
+      }
+      function clearDraft(kind) {
+        const all = read(storage.drafts, {});
+        delete all[kind];
+        write(storage.drafts, all);
       }
 
       function toDisplayTime(value) {
@@ -766,7 +799,7 @@
           <main class="narrow fade">
             ${isAuthor() ? `
             <form id="whisperForm">
-              <textarea id="whisperText" rows="3" placeholder="这一刻你在想什么..."></textarea>
+              <textarea id="whisperText" rows="3" placeholder="这一刻你在想什么...">${safe(loadDraft("whisper").text || "")}</textarea>
               <button class="ghost-button serif" type="submit">[ 记下 ]</button>
             </form>` : ""}
             <p class="status-line" id="whisperStatus">${loadingWhispers ? "正在读取云端呢喃..." : ""}</p>
@@ -777,6 +810,8 @@
           </main>
         `);
         const whisperForm = document.getElementById("whisperForm");
+        const whisperText = document.getElementById("whisperText");
+        if (whisperText) whisperText.oninput = () => saveDraft("whisper", { text: whisperText.value });
         if (whisperForm) whisperForm.onsubmit = async (event) => {
           event.preventDefault();
           const value = document.getElementById("whisperText").value.trim();
@@ -786,6 +821,8 @@
           try {
             const created = await createShared("whisper", value);
             sharedWhispers = [created, ...(sharedWhispers || [])];
+            clearDraft("whisper");
+            autoBackup();
             renderWhispers();
           } catch (err) {
             if (err && (err.status === 401 || err.status === 503)) {
@@ -822,7 +859,7 @@
                 <button class="ghost-button serif" onclick="go('echoes')">[ 返回 ]</button>
                 ${isAuthor() && item.id ? `<button class="ghost-button serif" onclick="deleteEcho(${item.id})">[ 删除 ]</button>` : ""}
                 ${item.personal ? `<button class="ghost-button serif" onclick="removeEcho(${activeEcho})">[ 移除 ]</button>` : ""}
-                <div class="reader-image"><img src="${safe(safeImage(item.image || item.thumb))}" alt=""></div>
+                <div class="reader-image"><img src="${safe(safeImage(item.image || item.thumb))}" alt="${safe(item.title || "回响照片")}"></div>
                 ${loadingImage ? `<p class="status-line">正在载入原图...</p>` : ""}
                 <time>${safe(item.date)}${item.personal ? " · 仅本机未同步" : ""}</time>
                 <h1 class="serif">${safe(item.title)}</h1>
@@ -845,8 +882,8 @@
                 <input id="echoPhoto" type="file" accept="image/*">
               </label>
               <div class="echo-fields">
-                <input id="echoTitle" placeholder="给这束光一个标题...">
-                <textarea id="echoBody" rows="4" placeholder="留下它当时的回响..."></textarea>
+                <input id="echoTitle" placeholder="给这束光一个标题..." value="${safe(loadDraft("echo").title || "")}">
+                <textarea id="echoBody" rows="4" placeholder="留下它当时的回响...">${safe(loadDraft("echo").body || "")}</textarea>
                 <button class="ghost-button serif" type="submit">[ 收进回响 ]</button>
               </div>
             </form>` : ""}
@@ -857,7 +894,7 @@
             <section class="grid">
               ${items.map((item, index) => `
                 <button class="card fade" onclick="go('echoes/${index}')">
-                  <div class="card-frame"><img loading="lazy" src="${safe(safeImage(item.thumb || item.image))}" alt=""></div>
+                  <div class="card-frame"><img loading="lazy" src="${safe(safeImage(item.thumb || item.image))}" alt="${safe(item.title || "回响照片")}"></div>
                   <h2 class="serif">${safe(item.title)}</h2>
                   <time>${safe(item.date)}${item.personal ? " · 仅本机未同步" : ""}</time>
                 </button>
@@ -889,6 +926,16 @@
           photoInput.onchange = onPhoto;
         }
 
+        // Keep the title/body draft so a refresh mid-compose doesn't lose words.
+        const echoTitleEl = document.getElementById("echoTitle");
+        const echoBodyEl = document.getElementById("echoBody");
+        const saveEchoDraft = () => saveDraft("echo", {
+          title: echoTitleEl ? echoTitleEl.value : "",
+          body: echoBodyEl ? echoBodyEl.value : ""
+        });
+        if (echoTitleEl) echoTitleEl.oninput = saveEchoDraft;
+        if (echoBodyEl) echoBodyEl.oninput = saveEchoDraft;
+
         // Submit handler with cloud support
         const echoForm = document.getElementById("echoForm");
         if (echoForm) {
@@ -909,6 +956,8 @@
               // Writing a local copy too would double it after a reload.
               sharedEchoes = [{ id: created.id, title, body, date: day(), thumb, image: imageData, personal: false }, ...(sharedEchoes || [])];
               draftPhoto = "";
+              clearDraft("echo");
+              autoBackup();
               if (status) status.textContent = "已收进云端回响！";
               setTimeout(() => renderEchoes(), 800);
             } catch (err) {
@@ -949,8 +998,8 @@
           <main class="narrow fade">
             <p class="about-copy serif">这个域名暂时不承担身份，也不承担作品集。它只是我在网络深处留出的一小块暗房，用来存放不急着被理解的句子、照片和沉默。</p>
             <form class="mailbox" id="mailForm">
-              <textarea class="field-box" id="mailMessage" rows="5" placeholder="想对树洞说的话..."></textarea>
-              <input class="field-box" id="mailContact" placeholder="你的联系方式（选填，若需回信）">
+              <textarea class="field-box" id="mailMessage" rows="5" placeholder="想对树洞说的话...">${safe(loadDraft("letter").message || "")}</textarea>
+              <input class="field-box" id="mailContact" placeholder="你的联系方式（选填，若需回信）" value="${safe(loadDraft("letter").contact || "")}">
               <button class="ghost-button serif" type="submit">[ 投递 ]</button>
               <p id="mailStatus" class="status-line">${loadingLetters ? "正在读取云端留言..." : ""}</p>
             </form>
@@ -958,6 +1007,7 @@
             <section class="backup">
               <button class="ghost-button serif" onclick="exportBackup()">[ 导出备份 ]</button>
               <label class="ghost-button serif">[ 导入备份 ]<input class="sr-only" id="backupInput" type="file" accept="application/json"></label>
+              <span id="backupStatus" class="status-line">${backupAgeLabel()}</span>
               ${isAuthor()
                 ? `<button class="ghost-button serif" onclick="logoutAuthor()">[ 退出作者 ]</button>`
                 : (authPrompting
@@ -976,6 +1026,14 @@
           authKeyInput.focus();
           authKeyInput.onkeydown = (event) => { if (event.key === "Enter") { event.preventDefault(); submitAuthorKey(); } };
         }
+        const mailMessageEl = document.getElementById("mailMessage");
+        const mailContactEl = document.getElementById("mailContact");
+        const saveLetterDraft = () => saveDraft("letter", {
+          message: mailMessageEl ? mailMessageEl.value : "",
+          contact: mailContactEl ? mailContactEl.value : ""
+        });
+        if (mailMessageEl) mailMessageEl.oninput = saveLetterDraft;
+        if (mailContactEl) mailContactEl.oninput = saveLetterDraft;
         document.getElementById("mailForm").onsubmit = async (event) => {
           event.preventDefault();
           const message = document.getElementById("mailMessage").value.trim();
@@ -987,6 +1045,8 @@
           try {
             const created = await createShared("letter", message || "（无正文）", contact);
             sharedLetters = [created, ...(sharedLetters || [])];
+            clearDraft("letter");
+            autoBackup();
             document.getElementById("mailStatus").textContent = "已放进树洞。";
             setTimeout(renderAbout, 700);
           } catch {
@@ -997,18 +1057,81 @@
         };
         document.getElementById("backupInput").onchange = importBackup;
       }
-      function exportBackup() {
+      // A lightweight snapshot (text + metadata, no full photos) written after
+      // every successful publish, so a cleared cache or lost device still leaves
+      // a recoverable trail. Kept small on purpose to stay within the localStorage
+      // quota; full-resolution photos live in the cloud and the manual export.
+      function autoBackup() {
+        try {
+          const snap = {
+            savedAt: new Date().toISOString(),
+            whispers: (sharedWhispers || []).map((w) => ({ time: w.time, text: w.text })),
+            letters: (sharedLetters || []).map((l) => ({ time: l.time, text: l.text, reply: l.reply || "" })),
+            echoes: (sharedEchoes || []).map((e) => ({ title: e.title, body: e.body, date: e.date }))
+          };
+          write("treehole.autobackup", snap);
+          localStorage.setItem(storage.backupAt, snap.savedAt);
+        } catch {}
+      }
+
+      function backupAgeLabel() {
+        try {
+          const at = localStorage.getItem(storage.backupAt);
+          if (!at) return "";
+          const diff = Date.now() - new Date(at).getTime();
+          if (!Number.isFinite(diff) || diff < 0) return "";
+          const mins = Math.floor(diff / 60000);
+          if (mins < 1) return "刚刚已备份";
+          if (mins < 60) return `上次备份 ${mins} 分钟前`;
+          const hrs = Math.floor(mins / 60);
+          if (hrs < 24) return `上次备份 ${hrs} 小时前`;
+          return `上次备份 ${Math.floor(hrs / 24)} 天前`;
+        } catch { return ""; }
+      }
+
+      // Manual export now captures the real content — the cloud posts, not just
+      // the local-only fallback — and pulls each echo's full-resolution photo so
+      // the file is a complete, portable archive.
+      async function exportBackup() {
+        const statusEl = document.getElementById("backupStatus");
+        if (statusEl) statusEl.textContent = "正在打包备份...";
+        const localWhispers = read(storage.whispers, []);
+        const localLetters = read(storage.letters, []);
+        const localEchoes = read(storage.echoes, []);
+
+        const echoes = [];
+        for (const e of (sharedEchoes || [])) {
+          let image = e.image || "";
+          if (!image && e.id && cloudEnabled) {
+            try {
+              const r = await fetch(`${API_POSTS}?id=${encodeURIComponent(e.id)}`, { headers: { "Accept": "application/json" } });
+              if (r.ok) { const d = await r.json(); image = (JSON.parse(d.post.content).image) || ""; }
+            } catch {}
+          }
+          echoes.push({ title: e.title, body: e.body, date: e.date, image: image || e.thumb || "" });
+        }
+
         const data = JSON.stringify({
-          whispers: read(storage.whispers, initialWhispers),
-          echoes: read(storage.echoes, []),
-          letters: read(storage.letters, [])
+          exportedAt: new Date().toISOString(),
+          whispers: [
+            ...(sharedWhispers || []).map((w) => ({ time: w.time, text: w.text })),
+            ...localWhispers
+          ],
+          echoes: [...echoes, ...localEchoes],
+          letters: [
+            ...(sharedLetters || []).map((l) => ({ time: l.time, text: l.text, reply: l.reply || "" })),
+            ...localLetters
+          ]
         }, null, 2);
+
         const url = URL.createObjectURL(new Blob([data], { type: "application/json;charset=utf-8" }));
         const link = document.createElement("a");
         link.href = url;
         link.download = `treehole-backup-${day()}.json`;
         link.click();
         URL.revokeObjectURL(url);
+        try { localStorage.setItem(storage.backupAt, new Date().toISOString()); } catch {}
+        if (statusEl) statusEl.textContent = "备份已导出。";
       }
       function importBackup(event) {
         const file = event.target.files && event.target.files[0];
