@@ -1,9 +1,9 @@
 const ALLOWED_KINDS = new Set(["whisper", "letter", "echo"]);
 
-// Only the site owner may publish to these. "letter" (信箱) stays open to
-// everyone so visitors can still reach out. Authorship is proven with a key
-// kept in the AUTHOR_KEY environment secret — never shipped to the browser.
 const RESTRICTED_KINDS = new Set(["whisper", "echo"]);
+
+// Public base URL for the treehole-photos R2 bucket.
+const R2_PUBLIC_URL = "https://pub-f42708c63abc452a9ea946efd7103d9a.r2.dev";
 
 function safeEqual(a, b) {
   if (typeof a !== "string" || typeof b !== "string" || a.length !== b.length) return false;
@@ -20,14 +20,14 @@ function authMatches(provided, expected) {
   return safeEqual(String(provided || "").trim(), String(expected || "").trim());
 }
 
-// Echo content embeds a full-size photo. The list endpoint drops it (keeping the
-// small thumb) so the grid payload stays tiny — the full image is fetched per
-// item by id only when a detail is opened. This is what lets the echo page load
-// on memory-constrained browsers like mobile Safari.
+// Strip the full-size base64 photo from echo list responses so the grid
+// payload stays small on mobile. R2-backed echoes store a short URL instead
+// of base64, so those are cheap and can be left in — the guard on startsWith
+// keeps backward-compat with older posts that still have inline base64.
 function lightenEchoContent(contentStr) {
   try {
     const obj = JSON.parse(contentStr);
-    if (obj && typeof obj === "object") {
+    if (obj && typeof obj === "object" && obj.image && obj.image.startsWith("data:")) {
       const { image, ...rest } = obj;
       return JSON.stringify(rest);
     }
@@ -35,9 +35,8 @@ function lightenEchoContent(contentStr) {
   return contentStr;
 }
 
-// Per-kind content limits. echo carries an embedded image payload, so it needs
-// more room than a plain text post. Large media should ideally live in R2, but
-// this keeps the bundled-image flow working without a separate storage binding.
+// Echo content now stores only metadata + thumb + an R2 URL, so it is small.
+// Keep a generous cap for backward-compat with older base64 posts.
 const MAX_CONTENT = { whisper: 2000, letter: 2000, echo: 1000000 };
 const MAX_CONTACT = 500;
 
@@ -254,13 +253,29 @@ async function handlePosts(request, env) {
   return json({ error: "Method not allowed." }, 405);
 }
 
+async function handlePhotos(request, env) {
+  if (!env.PHOTOS) return json({ error: "R2 binding PHOTOS is not configured." }, 500);
+  if (request.method !== "POST") return json({ error: "Method not allowed." }, 405);
+  if (!env.AUTHOR_KEY) return json({ error: "Author actions are not configured." }, 503);
+  if (!authMatches(request.headers.get("x-author-key"), env.AUTHOR_KEY)) {
+    return json({ error: "Unauthorized." }, 401);
+  }
+
+  const contentType = request.headers.get("content-type") || "image/jpeg";
+  const ext = (contentType.split("/")[1] || "jpeg").split(";")[0];
+  const key = `photos/echo-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+
+  await env.PHOTOS.put(key, request.body, { httpMetadata: { contentType } });
+
+  return json({ url: `${R2_PUBLIC_URL}/${key}` }, 201);
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
 
-    if (url.pathname === "/api/posts") {
-      return handlePosts(request, env);
-    }
+    if (url.pathname === "/api/posts") return handlePosts(request, env);
+    if (url.pathname === "/api/photos") return handlePhotos(request, env);
 
     return env.ASSETS.fetch(request);
   },

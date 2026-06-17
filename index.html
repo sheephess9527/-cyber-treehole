@@ -387,10 +387,12 @@
         return src.startsWith("data:") || src.startsWith("http") ? src : images.entrance;
       }
 
-      // Downscale + re-encode a picked photo so it fits the cloud content cap.
-      // The page never displays wider than ~760px, so shrinking to 1600px on the
-      // long edge is visually lossless here while keeping the upload shareable.
-      function compressImage(file, maxEdge = 1600, quality = 0.82) {
+      const API_PHOTOS = "/api/photos";
+
+      // Compress a picked photo for cloud upload. With R2 there is no 1 MB
+      // content cap, so we can afford higher quality and a larger max edge.
+      // Target ≤ 2 MB actual bytes (BUDGET chars × 0.75 ≈ bytes).
+      function compressImage(file, maxEdge = 2400, quality = 0.88) {
         return new Promise((resolve, reject) => {
           if (!file || !file.type || !file.type.startsWith("image/")) {
             reject(new Error("not an image"));
@@ -400,14 +402,10 @@
           const img = new Image();
           img.onload = () => {
             URL.revokeObjectURL(url);
-            // Must end up under the 1MB content cap. Leave headroom for the JSON
-            // wrapper plus the embedded thumbnail (~130KB), so target ~560KB.
-            const BUDGET = 560000;
+            const BUDGET = 2666666; // ≈ 2 MB actual bytes after base64 decode
             const fits = (dataUrl) => dataUrl.length * 0.75 <= BUDGET;
             let edge = maxEdge;
             let dataUrl = "";
-            // Step the long edge down; within each size, step quality down too.
-            // Guarantees the result fits so every echo can sync to the cloud.
             for (let attempt = 0; attempt < 7; attempt++) {
               const scale = Math.min(1, edge / Math.max(img.width, img.height));
               const width = Math.max(1, Math.round(img.width * scale));
@@ -422,14 +420,43 @@
                 q = Math.round((q - 0.1) * 100) / 100;
                 dataUrl = canvas.toDataURL("image/jpeg", q);
               }
-              if (fits(dataUrl)) break;     // small enough → done
-              edge = Math.round(edge * 0.8); // still too big → shrink and retry
+              if (fits(dataUrl)) break;
+              edge = Math.round(edge * 0.8);
             }
             resolve(dataUrl);
           };
           img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("decode failed")); };
           img.src = url;
         });
+      }
+
+      // Convert a base64 data-URL back to a Blob so we can upload raw bytes to R2.
+      function dataUrlToBlob(dataUrl) {
+        const [header, b64] = dataUrl.split(",");
+        const mime = (header.match(/:(.*?);/) || [])[1] || "image/jpeg";
+        const bytes = atob(b64);
+        const arr = new Uint8Array(bytes.length);
+        for (let i = 0; i < bytes.length; i++) arr[i] = bytes.charCodeAt(i);
+        return new Blob([arr], { type: mime });
+      }
+
+      // Upload a compressed photo (dataURL) to R2 via the worker endpoint.
+      // Returns the public https:// URL on success, or throws on failure.
+      async function uploadPhotoToR2(dataUrl) {
+        const blob = dataUrlToBlob(dataUrl);
+        const response = await fetch(API_PHOTOS, {
+          method: "POST",
+          headers: { "Content-Type": blob.type, "x-author-key": getAuthorKey() },
+          body: blob,
+        });
+        if (!response.ok) {
+          const data = await response.json().catch(() => ({}));
+          const err = new Error(data.error || "photo upload failed");
+          err.status = response.status;
+          throw err;
+        }
+        const data = await response.json();
+        return data.url;
       }
 
       function readFileAsDataUrl(file) {
@@ -480,6 +507,8 @@
       }
 
       async function fetchEchoImage(id, item) {
+        // R2-backed echoes already have a public URL — no round-trip needed.
+        if (item.image && item.image.startsWith("http")) return;
         if (!id || !cloudEnabled || item._loadingImage || item.image) return;
         item._loadingImage = true;
         try {
@@ -948,13 +977,25 @@
 
             const imageData = draftPhoto || images.entrance;
             const thumb = await makeThumb(imageData);
-            const echoContent = JSON.stringify({ title, body, image: imageData, thumb });
 
             try {
+              // Upload photo to R2 first; store only the public URL in D1.
+              // This removes the 1 MB content cap and preserves original quality.
+              let imageUrl = imageData; // fallback: inline base64 if R2 unavailable
+              if (status) status.textContent = "正在上传照片到云端...";
+              try {
+                imageUrl = await uploadPhotoToR2(imageData);
+              } catch (uploadErr) {
+                if (uploadErr.status === 401 || uploadErr.status === 503) {
+                  if (status) status.textContent = uploadErr.status === 401 ? "作者密钥无效，无法发布。请重新登录作者。" : "服务器未配置作者密钥（AUTHOR_KEY）。";
+                  return;
+                }
+                // R2 not configured or temporarily down — fall back to inline base64.
+              }
+              if (status) status.textContent = "正在收进回响...";
+              const echoContent = JSON.stringify({ title, body, image: imageUrl, thumb });
               const created = await createShared("echo", echoContent);
-              // Stored in the cloud, so show it from the shared list only.
-              // Writing a local copy too would double it after a reload.
-              sharedEchoes = [{ id: created.id, title, body, date: day(), thumb, image: imageData, personal: false }, ...(sharedEchoes || [])];
+              sharedEchoes = [{ id: created.id, title, body, date: day(), thumb, image: imageUrl, personal: false }, ...(sharedEchoes || [])];
               draftPhoto = "";
               clearDraft("echo");
               autoBackup();
@@ -965,13 +1006,10 @@
                 if (status) status.textContent = err.status === 401 ? "作者密钥无效，无法发布。请重新登录作者。" : "服务器未配置作者密钥（AUTHOR_KEY）。";
                 return;
               }
-              // Fallback to local (only visible on this device).
               const custom = read(storage.echoes, []);
               write(storage.echoes, [{ title, body, date: day(), image: imageData, personal: true }, ...custom]);
               draftPhoto = "";
-              if (status) status.textContent = err && err.status === 400
-                ? "照片过大，未能上云，仅存本机（其他设备看不到）。"
-                : "云端暂不可用，仅保存在本机（其他设备看不到）。";
+              if (status) status.textContent = "云端暂不可用，仅保存在本机（其他设备看不到）。";
               setTimeout(() => renderEchoes(), 800);
             }
           };

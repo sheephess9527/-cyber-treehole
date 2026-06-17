@@ -78,12 +78,13 @@ function json(body, status = 200) {
   return new Response(JSON.stringify(body), { status, headers });
 }
 
-// Drop the full-size photo from echo content so the list payload stays small;
-// the full image is fetched per item by id when a detail is opened.
+// Strip base64 photos from echo list responses to keep the payload small.
+// R2-backed echoes store a short URL instead of base64, so those are left in —
+// the startsWith guard keeps backward-compat with older base64 posts.
 function lightenEchoContent(contentStr) {
   try {
     const obj = JSON.parse(contentStr);
-    if (obj && typeof obj === "object") {
+    if (obj && typeof obj === "object" && obj.image && obj.image.startsWith("data:")) {
       const { image, ...rest } = obj;
       return JSON.stringify(rest);
     }
