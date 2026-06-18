@@ -78,4 +78,35 @@ Database: treehole-db
 - 信箱留言正文：公开展示给所有访问者。
 - 信箱联系方式：只写入 D1，不在网页上公开展示。
 - 作者回复：作者登录后可对每条留言回复（受 AUTHOR_KEY 校验），回复公开展示在该留言下方，访客可见。
-- 光影与回响的自定义照片：仍保存在当前浏览器。后续如果要跨设备公开照片，需要接 Cloudflare R2。
+- 光影与回响的照片：上传后存入 **Cloudflare R2**，D1 只保存 URL 与缩略图元数据。删除回响时会尝试同步删除 R2 中的原图。
+
+## Cloudflare R2 设置
+
+需要创建一个 R2 存储桶并绑定到 Workers / Pages 项目。
+
+推荐桶名：
+
+```text
+treehole-photos
+```
+
+绑定变量名：
+
+```text
+Variable name / 绑定变量名: PHOTOS
+Bucket: treehole-photos
+```
+
+R2 桶需开启公共访问（或使用自定义域名），并在 `worker.js` / `functions/api/photos.js` 中配置 `R2_PUBLIC_URL` 为对应的公开访问地址。
+
+## 旧图片迁移
+
+若站点早期将照片以 base64 存入 D1，作者登录后可在「留白与信箱」→ 备份区点击 `[ 迁移旧图片到 R2 ]`，或手动 `POST /api/migrate`（需 `x-author-key`）。
+
+## 表结构
+
+`schema.sql` 已包含 `reply` 字段。也可依赖 API 首次访问时自动建表/迁移。手动初始化：
+
+```bash
+wrangler d1 execute treehole-db --file=schema.sql
+```

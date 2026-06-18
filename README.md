@@ -1,30 +1,57 @@
-# 🕳️ Cyber Treehole (-网络树洞)
+# 🕳️ Cyber Treehole（赛博自留地 / 网络树洞）
 
-A modern, secure, and lightweight anonymous social platform built on a full-stack Serverless architecture. This project provides a turnkey solution for developers and grassroots communities to deploy their own privacy-focused micro-sharing spaces with zero hosting costs.
+一个轻量、隐私友好的个人精神自留地。纯 HTML 单页 + Cloudflare Workers + D1 + R2，零构建、可免费部署。
 
-## 🚀 Architecture & Tech Stack
+A modern, secure, and lightweight personal sanctuary built on serverless edge infrastructure.
 
-Unlike traditional web applications that require heavy servers, this project is engineered entirely on the cutting-edge cloud infrastructure:
+## 技术栈 / Tech Stack
 
-*   **Frontend:** Pure HTML5 / CSS3 single-page architecture—ultra-lightweight, zero-dependency, and fully responsive across mobile and desktop devices.
-*   **Edge Computing:** Powered by **Cloudflare Workers**, executing backend API logic at edge locations closest to users for blistering-fast response times.
-*   **Database:** Utilizing **Cloudflare D1**, a native serverless SQL relational database, ensuring secure, structured, and compliant data persistence.
+- **前端**：纯 HTML / CSS / JavaScript 单页，响应式，支持 PWA
+- **边缘计算**：Cloudflare Workers（`worker.js`）
+- **数据库**：Cloudflare D1（SQLite）
+- **图片存储**：Cloudflare R2（光影回响照片）
 
-## ✨ Core Features
+## 功能 / Features
 
-*   **Immersive Entrance:** A well-crafted, ritualistic welcome sequence that sets a serene mood before entering the anonymous space.
-*   **Shouting Wall & Public Records:** Allows users to publish thoughts anonymously to a public timeline, creating a shared community chronicle.
-*   **Photo & Feedback Logs:** Supports uploading local images paired with rich text reflections, fully rendered without relying on complex external asset paths.
-*   **Private Inbox Display:** A dedicated interface for publicly displaying mailbox messages and community responses.
-*   **Data Portability:** Seamless **JSON Export / Import** utility, giving users full ownership and easy backups of their platform data.
-*   **Strict Privacy:** No tracking scripts, no heavy frameworks, and complete respect for user data anonymity.
+- 仪式感入口页
+- 呢喃墙（作者发布，公开浏览）
+- 光影与回响（图文记录，照片存 R2）
+- 信箱留言（访客可投递，作者可回复）
+- JSON 导出 / 导入备份
+- 旧版 base64 图片一键迁移到 R2
 
-## 🛠️ Project Structure
+## 项目结构
 
 ```text
-├── Functions/ API/       # Serverless API routes for Cloudflare Workers
-├── index.html            # Main responsive frontend single-page
-├── schema.sql            # Relational database table definitions for Cloudflare D1
-├── worker.js             # Core Edge routing and backend controller logic
-├── wrangler.jsonc        # Cloudflare Wrangler infrastructure configuration
-└── 部署.md               # Detailed deployment handbook (Chinese)
+├── index.html            # 前端单页
+├── worker.js             # Workers 入口（API + 静态资源）
+├── functions/api/        # Pages Functions 备用 API 路由
+├── schema.sql            # D1 表结构（含 reply 字段）
+├── sw.js                 # Service Worker（PWA）
+├── manifest.webmanifest  # PWA 清单
+├── wrangler.jsonc        # Wrangler 配置
+├── DEPLOY.md             # 中文部署说明
+└── robots.txt / sitemap.xml
+```
+
+## 快速开始
+
+详细步骤见 [DEPLOY.md](./DEPLOY.md)。
+
+1. Fork 或 clone 本仓库
+2. 在 Cloudflare 创建 D1 数据库并绑定 `DB`
+3. 创建 R2 桶 `treehole-photos` 并绑定 `PHOTOS`
+4. 设置 Secret `AUTHOR_KEY`（作者发布密钥）
+5. 用 Wrangler 或 Cloudflare Pages 部署
+
+## 数据说明
+
+| 类型 | 谁可发布 | 谁可见 |
+|------|----------|--------|
+| whisper（呢喃） | 作者 | 所有人 |
+| echo（回响） | 作者 | 所有人 |
+| letter（信箱） | 所有人 | 正文与回复公开；联系方式仅作者后台可见 |
+
+## License
+
+Personal project — use and adapt freely for your own treehole.

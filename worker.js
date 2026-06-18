@@ -5,6 +5,21 @@ const RESTRICTED_KINDS = new Set(["whisper", "echo"]);
 // Public base URL for the treehole-photos R2 bucket.
 const R2_PUBLIC_URL = "https://pub-f42708c63abc452a9ea946efd7103d9a.r2.dev";
 
+function r2KeyFromUrl(url) {
+  if (!url || typeof url !== "string" || !url.startsWith(R2_PUBLIC_URL + "/")) return null;
+  return url.slice(R2_PUBLIC_URL.length + 1);
+}
+
+async function deleteEchoPhotos(env, contentStr) {
+  if (!env.PHOTOS || !contentStr) return;
+  try {
+    const obj = JSON.parse(contentStr);
+    if (!obj || typeof obj !== "object") return;
+    const key = r2KeyFromUrl(obj.image);
+    if (key) await env.PHOTOS.delete(key);
+  } catch {}
+}
+
 function safeEqual(a, b) {
   if (typeof a !== "string" || typeof b !== "string" || a.length !== b.length) return false;
   let mismatch = 0;
@@ -239,6 +254,10 @@ async function handlePosts(request, env) {
     if (!Number.isInteger(id) || id <= 0) {
       return json({ error: "A valid post id is required." }, 400);
     }
+    const row = await env.DB.prepare("SELECT kind, content FROM public_posts WHERE id = ?")
+      .bind(id)
+      .first();
+    if (row && row.kind === "echo") await deleteEchoPhotos(env, row.content);
     await env.DB.prepare("DELETE FROM public_posts WHERE id = ?").bind(id).run();
     return json({ deleted: true, id });
   }

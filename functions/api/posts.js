@@ -10,6 +10,23 @@ const allowedKinds = new Set(["whisper", "letter", "echo"]);
 // kept in the AUTHOR_KEY environment secret — never shipped to the browser.
 const restrictedKinds = new Set(["whisper", "echo"]);
 
+const R2_PUBLIC_URL = "https://pub-f42708c63abc452a9ea946efd7103d9a.r2.dev";
+
+function r2KeyFromUrl(url) {
+  if (!url || typeof url !== "string" || !url.startsWith(R2_PUBLIC_URL + "/")) return null;
+  return url.slice(R2_PUBLIC_URL.length + 1);
+}
+
+async function deleteEchoPhotos(env, contentStr) {
+  if (!env.PHOTOS || !contentStr) return;
+  try {
+    const obj = JSON.parse(contentStr);
+    if (!obj || typeof obj !== "object") return;
+    const key = r2KeyFromUrl(obj.image);
+    if (key) await env.PHOTOS.delete(key);
+  } catch {}
+}
+
 function safeEqual(a, b) {
   if (typeof a !== "string" || typeof b !== "string" || a.length !== b.length) return false;
   let mismatch = 0;
@@ -211,6 +228,8 @@ export async function onRequestDelete(context) {
   if (!Number.isInteger(id) || id <= 0) return json({ error: "A valid post id is required" }, 400);
 
   await ensureSchema(db);
+  const row = await db.prepare("SELECT kind, content FROM public_posts WHERE id = ?").bind(id).first();
+  if (row && row.kind === "echo") await deleteEchoPhotos(context.env, row.content);
   await db.prepare("DELETE FROM public_posts WHERE id = ?").bind(id).run();
   return json({ deleted: true, id });
 }

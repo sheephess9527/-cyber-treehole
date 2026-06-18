@@ -4,6 +4,14 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content="一个无功利记录、反算法侵蚀的个人精神自留地。" />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="赛博自留地" />
+    <meta property="og:description" content="一个无功利记录、反算法侵蚀的个人精神自留地。" />
+    <meta property="og:image" content="/icon-512.png" />
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content="赛博自留地" />
+    <meta name="twitter:description" content="一个无功利记录、反算法侵蚀的个人精神自留地。" />
+    <meta name="twitter:image" content="/icon-512.png" />
     <meta name="theme-color" content="#0B0A09" />
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
@@ -239,8 +247,9 @@
       .letter-list, .backup { margin-top: 48px; padding-top: 36px; border-top: 1px solid var(--line); }
       .letter-list article { margin-bottom: 28px; }
       .letter-reply { margin-top: 10px; padding: 10px 0 2px 14px; border-left: 2px solid rgba(176, 161, 139, .5); color: var(--accent); }
-      .author-login { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-      .author-login input { width: auto; flex: 1 1 180px; min-width: 160px; padding: 8px 0; }
+      .author-login, .letter-reply-form { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+      .author-login input, .letter-reply-form textarea { width: auto; flex: 1 1 180px; min-width: 160px; padding: 8px 0; }
+      .letter-reply-form textarea { min-height: 72px; resize: vertical; }
       .backup { display: flex; flex-wrap: wrap; gap: 20px; }
       .status-line { color: var(--muted); font-size: 13px; line-height: 1.8; min-height: 1.8em; }
       .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); }
@@ -285,9 +294,11 @@
         cache: {
           whispers: "treehole.cache.whispers",
           letters:  "treehole.cache.letters",
+          echoes:   "treehole.cache.echoes",
         },
       };
       const API_POSTS = "/api/posts";
+      const API_MIGRATE = "/api/migrate";
       const cloudEnabled = location.protocol === "http:" || location.protocol === "https:";
 
       // Author mode. The key proves authorship to the backend (whisper/echo are
@@ -377,6 +388,9 @@
       let loadingLetters = false;
       let loadingEchoes = false;   // 新增
       let echoesError = false;     // true when the cloud echo fetch failed
+      let replyingLetterId = null;
+      let lettersVisible = 12;
+      let migrating = false;
       function safe(str) {
         return String(str || "")
           .replace(/&/g, "&amp;")
@@ -569,11 +583,44 @@
         write(storage.drafts, all);
       }
 
+      function parseTime(value) {
+        if (!value) return null;
+        const direct = new Date(value);
+        if (!Number.isNaN(direct.getTime())) return direct;
+        const m = String(value).match(/^(\d{4})-(\d{2})-(\d{2})(?:\s+(\d{2}):(\d{2}))?/);
+        if (!m) return null;
+        return new Date(+m[1], +m[2] - 1, +m[3], +(m[4] || 0), +(m[5] || 0));
+      }
+
       function toDisplayTime(value) {
-        const date = new Date(value);
-        if (Number.isNaN(date.getTime())) return String(value).slice(0, 16);
+        const date = parseTime(value);
+        if (!date) return String(value).slice(0, 16);
         return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")} ${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
-      };
+      }
+
+      function relativeTime(value) {
+        const date = parseTime(value);
+        if (!date) return "";
+        const diff = Date.now() - date.getTime();
+        if (diff < 0) return "";
+        const mins = Math.floor(diff / 60000);
+        if (mins < 1) return "刚刚";
+        if (mins < 60) return `${mins} 分钟前`;
+        const hrs = Math.floor(mins / 60);
+        if (hrs < 24) return `${hrs} 小时前`;
+        const days = Math.floor(hrs / 24);
+        if (days < 30) return `${days} 天前`;
+        const months = Math.floor(days / 30);
+        if (months < 12) return `${months} 个月前`;
+        return `${Math.floor(months / 12)} 年前`;
+      }
+
+      function formatTimeHtml(value) {
+        const abs = toDisplayTime(value);
+        const rel = relativeTime(value);
+        const label = rel || abs;
+        return `<time title="${safe(abs)}">${safe(label)}</time>`;
+      }
 
       async function fetchShared(kind) {
         if (!cloudEnabled) return [];
@@ -661,24 +708,91 @@
 
       // Keep the localStorage cache in sync after a local mutation so the next
       // instant-load reflects the change instead of briefly showing stale data.
+      function lightenEchoForCache(items) {
+        return items.map((e) => ({
+          id: e.id,
+          title: e.title,
+          body: e.body,
+          date: e.date,
+          thumb: e.thumb && e.thumb.startsWith("http") ? e.thumb : "",
+          image: e.image && e.image.startsWith("http") ? e.image : "",
+          personal: !!e.personal,
+        }));
+      }
+
+      function writeEchoCache(items) {
+        try {
+          const light = lightenEchoForCache(items || []);
+          if (JSON.stringify(light).length > 400000) return;
+          write(storage.cache.echoes, light);
+        } catch {}
+      }
+
       function cacheShared(kind) {
         if (kind === "whisper" && sharedWhispers) write(storage.cache.whispers, sharedWhispers);
         if (kind === "letter" && sharedLetters) write(storage.cache.letters, sharedLetters);
-        // Echoes are intentionally not cached — see loadEchoes.
+        if (kind === "echo" && sharedEchoes) writeEchoCache(sharedEchoes);
       }
 
-      async function replyLetter(id) {
+      function startReplyLetter(id) {
+        replyingLetterId = id;
+        renderAbout();
+        requestAnimationFrame(() => {
+          const el = document.getElementById("replyInput");
+          if (el) el.focus();
+        });
+      }
+
+      function cancelReplyLetter() {
+        replyingLetterId = null;
+        renderAbout();
+      }
+
+      async function submitReplyLetter(id) {
+        const el = document.getElementById("replyInput");
+        const statusEl = document.getElementById("replyStatus");
+        const reply = el ? el.value.trim() : "";
         const letter = (sharedLetters || []).find((item) => item.id === id);
-        const existing = letter ? (letter.reply || "") : "";
-        const text = window.prompt("回复这条留言（清空并确定可删除回复）：", existing);
-        if (text === null) return;
-        const reply = text.trim();
+        if (statusEl) statusEl.textContent = "正在保存回复...";
         try {
           await replyShared(id, reply);
           if (letter) letter.reply = reply;
           cacheShared("letter");
+          replyingLetterId = null;
           renderAbout();
-        } catch (err) { window.alert(actionErrorMessage(err, "回复")); }
+        } catch (err) {
+          if (statusEl) statusEl.textContent = actionErrorMessage(err, "回复");
+        }
+      }
+
+      function showMoreLetters() {
+        lettersVisible += 12;
+        renderAbout();
+      }
+
+      async function runMigrate() {
+        if (!isAuthor() || migrating) return;
+        if (!window.confirm("将旧版 base64 图片迁移到 R2？已迁移的条目会自动跳过。")) return;
+        migrating = true;
+        renderAbout();
+        const statusEl = document.getElementById("migrateStatus");
+        if (statusEl) statusEl.textContent = "正在迁移，请稍候...";
+        try {
+          const response = await fetch(API_MIGRATE, {
+            method: "POST",
+            headers: { "Accept": "application/json", "x-author-key": getAuthorKey() },
+          });
+          const data = await response.json().catch(() => ({}));
+          if (!response.ok) throw new Error(data.error || "migrate failed");
+          if (statusEl) statusEl.textContent = `迁移完成：${data.migrated} 条已迁移，${data.skipped} 条跳过，${data.errors} 条失败。`;
+          sharedEchoes = null;
+          loadEchoes();
+        } catch (err) {
+          if (statusEl) statusEl.textContent = err.message || "迁移失败，请稍后再试。";
+        } finally {
+          migrating = false;
+          renderAbout();
+        }
       }
 
       async function deleteWhisper(id) {
@@ -696,6 +810,7 @@
         try {
           await deleteShared(id);
           sharedEchoes = (sharedEchoes || []).filter((item) => item.id !== id);
+          writeEchoCache(sharedEchoes);
           go("echoes");
         } catch (err) { window.alert(deleteErrorMessage(err)); }
       }
@@ -777,16 +892,40 @@
           .finally(() => { loadingLetters = false; if (tab === "about") renderAbout(); });
       }
 
-      // Echoes are NOT cached in localStorage: their embedded base64 thumbnails
-      // make the cache large and fragile (quota errors, stale historical posts).
-      // Correctness matters more than the small speed win here, so always fetch
-      // once per session. The R2 photo URLs already make the network load light.
+      // Echo cache stores only lightweight metadata (http URLs, no base64 blobs).
+      function revalidateEchoes() {
+        fetchShared("echo")
+          .then((items) => {
+            const parsed = parseEchoItems(items);
+            if (JSON.stringify(parsed) !== JSON.stringify(sharedEchoes)) {
+              sharedEchoes = parsed;
+              writeEchoCache(sharedEchoes);
+              if (tab === "echoes") renderEchoes();
+            }
+            echoesError = false;
+          })
+          .catch(() => {
+            echoesError = !sharedEchoes || !sharedEchoes.length;
+            if (tab === "echoes") renderEchoes();
+          });
+      }
+
       function loadEchoes() {
         if (sharedEchoes || loadingEchoes) return;
+        const cached = read(storage.cache.echoes, null);
+        if (cached !== null && Array.isArray(cached)) {
+          sharedEchoes = cached;
+          if (tab === "echoes") renderEchoes();
+          revalidateEchoes();
+          return;
+        }
         loadingEchoes = true;
         echoesError = false;
         fetchShared("echo")
-          .then((items) => { sharedEchoes = parseEchoItems(items); })
+          .then((items) => {
+            sharedEchoes = parseEchoItems(items);
+            writeEchoCache(sharedEchoes);
+          })
           .catch(() => { sharedEchoes = []; echoesError = true; })
           .finally(() => { loadingEchoes = false; if (tab === "echoes") renderEchoes(); });
       }
@@ -883,10 +1022,10 @@
               <textarea id="whisperText" rows="3" placeholder="这一刻你在想什么...">${safe(loadDraft("whisper").text || "")}</textarea>
               <button class="ghost-button serif" type="submit">[ 记下 ]</button>
             </form>` : ""}
-            <p class="status-line" id="whisperStatus">${loadingWhispers ? "正在读取云端呢喃..." : ""}</p>
+            <p class="status-line" id="whisperStatus">${loadingWhispers && !sharedWhispers ? "正在读取云端呢喃..." : ""}</p>
             ${isAuthor() && localItems.length ? `<button class="ghost-button serif" onclick="clearWhispers()">[ 清空本机缓存记录 ]</button>` : ""}
             <section class="timeline">
-              ${items.map(item => `<article class="fade"><time>[${safe(item.time)}]</time><p class="serif">${safe(item.text)}</p>${isAuthor() && item.id ? `<button class="ghost-button serif" onclick="deleteWhisper(${item.id})">[ 删除 ]</button>` : ""}</article>`).join("")}
+              ${items.map(item => `<article class="fade">${formatTimeHtml(item.time)}<p class="serif">${safe(item.text)}</p>${isAuthor() && item.id ? `<button class="ghost-button serif" onclick="deleteWhisper(${item.id})">[ 删除 ]</button>` : ""}</article>`).join("")}
             </section>
           </main>
         `);
@@ -943,7 +1082,7 @@
                 ${item.personal ? `<button class="ghost-button serif" onclick="removeEcho(${activeEcho})">[ 移除 ]</button>` : ""}
                 <div class="reader-image"><img src="${safe(safeImage(item.image || item.thumb))}" alt="${safe(item.title || "回响照片")}"></div>
                 ${loadingImage ? `<p class="status-line">正在载入原图...</p>` : ""}
-                <time>${safe(item.date)}${item.personal ? " · 仅本机未同步" : ""}</time>
+                ${formatTimeHtml(item.date)}${item.personal ? `<span class="status-line"> · 仅本机未同步</span>` : ""}
                 <h1 class="serif">${safe(item.title)}</h1>
                 <p class="reader-body serif">${safe(item.body)}</p>
               </main>
@@ -969,7 +1108,7 @@
                 <button class="ghost-button serif" type="submit">[ 收进回响 ]</button>
               </div>
             </form>` : ""}
-            <p class="status-line" id="echoStatus">${loadingEchoes ? "正在读取云端回响..." : (echoesError ? "云端暂不可用，回响未能载入。" : "")}</p>
+            <p class="status-line" id="echoStatus">${loadingEchoes && !sharedEchoes ? "正在读取云端回响..." : (echoesError ? "云端暂不可用，回响未能载入。" : "")}</p>
             ${(!loadingEchoes && echoesError)
               ? `<button class="ghost-button serif" onclick="retryEchoes()">[ 重新加载 ]</button>`
               : ""}
@@ -981,7 +1120,7 @@
                 <button class="card fade" onclick="go('echoes/${index}')">
                   <div class="card-frame"><img loading="lazy" src="${safe(safeImage(item.thumb || item.image))}" alt="${safe(item.title || "回响照片")}"></div>
                   <h2 class="serif">${safe(item.title)}</h2>
-                  <time>${safe(item.date)}${item.personal ? " · 仅本机未同步" : ""}</time>
+                  ${formatTimeHtml(item.date)}${item.personal ? `<span class="status-line"> · 仅本机未同步</span>` : ""}
                 </button>
               `).join("")}
             </section>
@@ -1052,6 +1191,7 @@
               const echoContent = JSON.stringify({ title, body, image: imageUrl, thumb });
               const created = await createShared("echo", echoContent);
               sharedEchoes = [{ id: created.id, title, body, date: day(), thumb, image: imageUrl, personal: false }, ...(sharedEchoes || [])];
+              writeEchoCache(sharedEchoes);
               draftPhoto = "";
               clearDraft("echo");
               autoBackup();
@@ -1083,11 +1223,34 @@
         go("echoes");
       }
 
+      function letterArticleHtml(letter) {
+        const id = letter.id;
+        const editing = isAuthor() && id && replyingLetterId === id;
+        const replyControls = isAuthor() && id
+          ? (editing
+              ? `<span class="letter-reply-form">
+                   <textarea id="replyInput" rows="3" placeholder="回复这条留言（留空保存即删除回复）">${safe(letter.reply || "")}</textarea>
+                   <button class="ghost-button serif" onclick="submitReplyLetter(${id})">[ 保存 ]</button>
+                   <button class="ghost-button serif" onclick="cancelReplyLetter()">[ 取消 ]</button>
+                   <span id="replyStatus" class="status-line"></span>
+                 </span>`
+              : `<button class="ghost-button serif" onclick="startReplyLetter(${id})">[ ${letter.reply ? "编辑回复" : "回复"} ]</button>`)
+          : "";
+        return `<article>
+          ${formatTimeHtml(letter.time)}
+          <p class="serif">${safe(letter.text || letter.message || "")}</p>
+          ${letter.reply && !editing ? `<p class="serif letter-reply">树洞回复：${safe(letter.reply)}</p>` : ""}
+          ${replyControls}
+          ${isAuthor() && id ? `<button class="ghost-button serif" onclick="deleteLetter(${id})">[ 删除 ]</button>` : ""}
+        </article>`;
+      }
+
       function renderAbout() {
         loadLetters();
         const localLetters = read(storage.letters, []);
         const publicLetters = sharedLetters || [];
         const letters = [...publicLetters, ...localLetters];
+        const visibleLetters = letters.slice(0, lettersVisible);
         shell(`
           <main class="narrow fade">
             <p class="about-copy serif">这个域名暂时不承担身份，也不承担作品集。它只是我在网络深处留出的一小块暗房，用来存放不急着被理解的句子、照片和沉默。</p>
@@ -1095,15 +1258,17 @@
               <textarea class="field-box" id="mailMessage" rows="5" placeholder="想对树洞说的话...">${safe(loadDraft("letter").message || "")}</textarea>
               <input class="field-box" id="mailContact" placeholder="你的联系方式（选填，若需回信）" value="${safe(loadDraft("letter").contact || "")}">
               <button class="ghost-button serif" type="submit">[ 投递 ]</button>
-              <p id="mailStatus" class="status-line">${loadingLetters ? "正在读取云端留言..." : ""}</p>
+              <p id="mailStatus" class="status-line">${loadingLetters && !sharedLetters ? "正在读取云端留言..." : ""}</p>
             </form>
-            ${letters.length ? `<section class="letter-list">${letters.slice(0, 12).map(letter => `<article><time>[${safe(letter.time)}]</time><p class="serif">${safe(letter.text || letter.message || "")}</p>${letter.reply ? `<p class="serif letter-reply">树洞回复：${safe(letter.reply)}</p>` : ""}${isAuthor() && letter.id ? `<button class="ghost-button serif" onclick="replyLetter(${letter.id})">[ ${letter.reply ? "编辑回复" : "回复"} ]</button><button class="ghost-button serif" onclick="deleteLetter(${letter.id})">[ 删除 ]</button>` : ""}</article>`).join("")}</section>` : ""}
+            ${letters.length ? `<section class="letter-list">${visibleLetters.map(letterArticleHtml).join("")}${letters.length > lettersVisible ? `<button class="ghost-button serif" onclick="showMoreLetters()">[ 加载更多留言 ]</button>` : ""}</section>` : ""}
             <section class="backup">
               <button class="ghost-button serif" onclick="exportBackup()">[ 导出备份 ]</button>
               <label class="ghost-button serif">[ 导入备份 ]<input class="sr-only" id="backupInput" type="file" accept="application/json"></label>
               <span id="backupStatus" class="status-line">${backupAgeLabel()}</span>
               ${isAuthor()
-                ? `<button class="ghost-button serif" onclick="logoutAuthor()">[ 退出作者 ]</button>`
+                ? `<button class="ghost-button serif" onclick="runMigrate()" ${migrating ? "disabled" : ""}>[ 迁移旧图片到 R2 ]</button>
+                   <span id="migrateStatus" class="status-line"></span>
+                   <button class="ghost-button serif" onclick="logoutAuthor()">[ 退出作者 ]</button>`
                 : (authPrompting
                     ? `<span class="author-login">
                          <input id="authKeyInput" type="text" inputmode="text" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" placeholder="输入作者密钥" />
@@ -1119,6 +1284,16 @@
         if (authKeyInput) {
           authKeyInput.focus();
           authKeyInput.onkeydown = (event) => { if (event.key === "Enter") { event.preventDefault(); submitAuthorKey(); } };
+        }
+        const replyInput = document.getElementById("replyInput");
+        if (replyInput) {
+          replyInput.focus();
+          replyInput.onkeydown = (event) => {
+            if (event.key === "Enter" && !event.shiftKey) {
+              event.preventDefault();
+              submitReplyLetter(replyingLetterId);
+            }
+          };
         }
         const mailMessageEl = document.getElementById("mailMessage");
         const mailContactEl = document.getElementById("mailContact");
@@ -1249,9 +1424,14 @@
         reader.readAsText(file, "utf-8");
       }
 
-      // One-time cleanup: a prior version cached echoes (with base64 thumbs) in
-      // localStorage, which could grow huge and stall the echo tab. Remove it.
-      try { localStorage.removeItem("treehole.cache.echoes"); } catch {}
+      // Prefetch cloud data while the entrance is visible so tabs feel instant.
+      function prefetchCloudData() {
+        if (!cloudEnabled) return;
+        loadWhispers();
+        loadEchoes();
+        loadLetters();
+      }
+      prefetchCloudData();
 
       // The URL hash is the source of truth for which view is shown, so a
       // refresh stays on the current tab and the back button works.
