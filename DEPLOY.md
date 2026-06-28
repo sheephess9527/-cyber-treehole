@@ -110,3 +110,15 @@ R2 桶需开启公共访问（或使用自定义域名），并在 `worker.js` /
 ```bash
 wrangler d1 execute treehole-db --file=schema.sql
 ```
+
+## 本地验证（测试）
+
+改完代码、部署前，跑一遍测试（Node 22+，用内置 `node:sqlite`，无需安装依赖）：
+
+```bash
+node tests/core.test.mjs      # 发帖 / 鉴权 / 限流 / 隐私 / 回响剥离大图
+node tests/r2.test.mjs        # R2 照片上传 + 回响流程 + 删除清理
+node tests/migrate.test.mjs   # 一次性迁移接口的幂等性
+```
+
+三个都应输出 `N 通过 / 0 失败`。架构与开发约定见 [`CLAUDE.md`](./CLAUDE.md)。
