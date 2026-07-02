@@ -102,12 +102,28 @@ async function ensureSchema(db) {
   schemaReady = true;
 }
 
+// Low-cost hardening headers that don't affect functionality. A strict CSP is
+// skipped for now because the frontend is a single file with inline
+// <script>/<style> and would need a rework to add nonces/hashes.
+const SECURITY_HEADERS = {
+  "x-content-type-options": "nosniff",
+  "referrer-policy": "strict-origin-when-cross-origin",
+  "permissions-policy": "geolocation=(), camera=(), microphone=()",
+};
+
+function withSecurityHeaders(response) {
+  const headers = new Headers(response.headers);
+  for (const [key, value] of Object.entries(SECURITY_HEADERS)) headers.set(key, value);
+  return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
+}
+
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
     headers: {
       "content-type": "application/json; charset=utf-8",
       "cache-control": "no-store",
+      ...SECURITY_HEADERS,
     },
   });
 }
@@ -169,14 +185,14 @@ async function handlePosts(request, env) {
                 THEN json_remove(content, '$.image')
                 ELSE content END AS content,
            created_at, reply
-         FROM public_posts WHERE kind = ? ORDER BY id DESC LIMIT ?`
+         FROM public_posts WHERE kind = ? ORDER BY created_at DESC, id DESC LIMIT ?`
       )
         .bind(kind, limit)
         .all();
       posts = (results || []).map((p) => ({ ...p, content: lightenEchoContent(p.content) }));
     } else {
       const { results } = await env.DB.prepare(
-        "SELECT id, kind, content, created_at, reply FROM public_posts WHERE kind = ? ORDER BY id DESC LIMIT ?"
+        "SELECT id, kind, content, created_at, reply FROM public_posts WHERE kind = ? ORDER BY created_at DESC, id DESC LIMIT ?"
       )
         .bind(kind, limit)
         .all();
@@ -304,7 +320,11 @@ async function handlePhotos(request, env) {
   const ext = (contentType.split("/")[1] || "jpeg").split(";")[0];
   const key = `photos/echo-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
 
-  await env.PHOTOS.put(key, request.body, { httpMetadata: { contentType } });
+  // Keys are timestamp+random and never reused, so the object at a given URL
+  // never changes — safe to cache for a year and cuts repeat-visit R2 egress.
+  await env.PHOTOS.put(key, request.body, {
+    httpMetadata: { contentType, cacheControl: "public, max-age=31536000, immutable" },
+  });
 
   return json({ url: `${R2_PUBLIC_URL}/${key}` }, 201);
 }
@@ -358,7 +378,9 @@ async function handleMigrate(request, env) {
       for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
 
       const key = `photos/echo-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
-      await env.PHOTOS.put(key, bytes.buffer, { httpMetadata: { contentType: mimeType } });
+      await env.PHOTOS.put(key, bytes.buffer, {
+        httpMetadata: { contentType: mimeType, cacheControl: "public, max-age=31536000, immutable" },
+      });
       const r2Url = `${R2_PUBLIC_URL}/${key}`;
 
       await env.DB.prepare("UPDATE public_posts SET content = ? WHERE id = ?")
@@ -382,6 +404,6 @@ export default {
     if (url.pathname === "/api/photos") return handlePhotos(request, env);
     if (url.pathname === "/api/migrate") return handleMigrate(request, env);
 
-    return env.ASSETS.fetch(request);
+    return withSecurityHeaders(await env.ASSETS.fetch(request));
   },
 };

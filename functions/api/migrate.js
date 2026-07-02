@@ -3,6 +3,9 @@ const R2_PUBLIC_URL = "https://pub-f42708c63abc452a9ea946efd7103d9a.r2.dev";
 const headers = {
   "Content-Type": "application/json; charset=utf-8",
   "Cache-Control": "no-store",
+  "X-Content-Type-Options": "nosniff",
+  "Referrer-Policy": "strict-origin-when-cross-origin",
+  "Permissions-Policy": "geolocation=(), camera=(), microphone=()",
 };
 
 function safeEqual(a, b) {
@@ -69,7 +72,9 @@ export async function onRequestPost(context) {
       for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
 
       const key = `photos/echo-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
-      await env.PHOTOS.put(key, bytes.buffer, { httpMetadata: { contentType: mimeType } });
+      await env.PHOTOS.put(key, bytes.buffer, {
+        httpMetadata: { contentType: mimeType, cacheControl: "public, max-age=31536000, immutable" },
+      });
       const r2Url = `${R2_PUBLIC_URL}/${key}`;
 
       await env.DB.prepare("UPDATE public_posts SET content = ? WHERE id = ?")

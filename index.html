@@ -8,11 +8,14 @@
     <meta property="og:title" content="赛博自留地" />
     <meta property="og:description" content="一个无功利记录、反算法侵蚀的个人精神自留地。" />
     <meta property="og:image" content="/icon-512.png" />
+    <meta property="og:url" content="https://zhengjianyong.de/" />
     <meta name="twitter:card" content="summary" />
     <meta name="twitter:title" content="赛博自留地" />
     <meta name="twitter:description" content="一个无功利记录、反算法侵蚀的个人精神自留地。" />
     <meta name="twitter:image" content="/icon-512.png" />
     <meta name="theme-color" content="#0B0A09" />
+    <link rel="canonical" href="https://zhengjianyong.de/" />
+    <link rel="preconnect" href="https://pub-f42708c63abc452a9ea946efd7103d9a.r2.dev" />
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <link rel="icon" type="image/png" href="/icon-192.png" />
@@ -368,12 +371,6 @@
         room: svg(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 900"><rect width="1200" height="900" fill="#080706"/><path d="M110 90 H1090 V770 H110 Z" fill="#171512"/><path d="M110 770 H1090 L1200 900 H0 Z" fill="#0f0d0b"/><rect x="760" y="130" width="170" height="260" fill="#201c17"/><rect x="780" y="150" width="130" height="220" fill="#756957" opacity=".36"/><path d="M780 150 L362 770 H608 L910 370 V150 Z" fill="#d7cab2" opacity=".13"/><rect x="240" y="618" width="330" height="8" fill="#3c352d" opacity=".68"/><rect x="240" y="626" width="330" height="76" fill="#191611"/><filter id="grain"><feTurbulence type="fractalNoise" baseFrequency=".78" numOctaves="3"/><feColorMatrix type="saturate" values="0"/><feComponentTransfer><feFuncA type="table" tableValues="0 .07"/></feComponentTransfer></filter><rect width="1200" height="900" filter="url(#grain)" opacity=".62"/></svg>`),
         field: svg(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 900"><rect width="1200" height="900" fill="#080706"/><rect y="390" width="1200" height="510" fill="#15120f"/><path d="M0 394 C160 374 258 402 410 386 C598 366 730 396 900 376 C1040 360 1134 368 1200 356" fill="none" stroke="#5c5347" stroke-width="2" opacity=".82"/><g stroke="#62594c" stroke-width="1" opacity=".62"><path d="M146 840 C156 728 170 632 192 524"/><path d="M250 852 C242 730 264 624 286 506"/><path d="M430 872 C428 750 468 636 512 496"/><path d="M650 860 C626 744 664 612 708 480"/><path d="M874 868 C880 742 910 620 972 486"/><path d="M1038 850 C1018 730 1048 622 1096 510"/></g><rect y="300" width="1200" height="210" fill="url(#haze)" opacity=".72"/><filter id="grain"><feTurbulence type="fractalNoise" baseFrequency=".92" numOctaves="2"/><feColorMatrix type="saturate" values="0"/><feComponentTransfer><feFuncA type="table" tableValues="0 .08"/></feComponentTransfer></filter><rect width="1200" height="900" filter="url(#grain)" opacity=".66"/><defs><linearGradient id="haze" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#000" stop-opacity="0"/><stop offset=".5" stop-color="#c7bda9" stop-opacity=".09"/><stop offset="1" stop-color="#000" stop-opacity="0"/></linearGradient></defs></svg>`)
       };
-
-      const initialWhispers = [
-        { time: "2026-06-08 23:45", text: "忽然觉得，真正属于自己的地方，不应该催促我表达得更好。" },
-        { time: "2026-06-08 21:12", text: "今晚没有结论。只是把一小段沉默放在这里。" },
-        { time: "2026-06-07 00:18", text: "我想保留一些不被推荐、不被比较、不被解释的东西。" }
-      ];
 
       // Add default echoes if needed (you had some before)
       const defaultEchoes = [];
@@ -1014,7 +1011,7 @@
         loadWhispers();
         const localItems = read(storage.whispers, []);
         const publicItems = sharedWhispers || [];
-        const items = [...publicItems, ...localItems, ...initialWhispers];
+        const items = [...publicItems, ...localItems];
         shell(`
           <main class="narrow fade">
             ${isAuthor() ? `

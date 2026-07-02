@@ -3,6 +3,9 @@ const R2_PUBLIC_URL = "https://pub-f42708c63abc452a9ea946efd7103d9a.r2.dev";
 const headers = {
   "Content-Type": "application/json; charset=utf-8",
   "Cache-Control": "no-store",
+  "X-Content-Type-Options": "nosniff",
+  "Referrer-Policy": "strict-origin-when-cross-origin",
+  "Permissions-Policy": "geolocation=(), camera=(), microphone=()",
 };
 
 function safeEqual(a, b) {
@@ -33,7 +36,11 @@ export async function onRequestPost(context) {
   const ext = (contentType.split("/")[1] || "jpeg").split(";")[0];
   const key = `photos/echo-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
 
-  await env.PHOTOS.put(key, request.body, { httpMetadata: { contentType } });
+  // Keys are timestamp+random and never reused, so the object at a given URL
+  // never changes — safe to cache for a year and cuts repeat-visit R2 egress.
+  await env.PHOTOS.put(key, request.body, {
+    httpMetadata: { contentType, cacheControl: "public, max-age=31536000, immutable" },
+  });
 
   return json({ url: `${R2_PUBLIC_URL}/${key}` }, 201);
 }

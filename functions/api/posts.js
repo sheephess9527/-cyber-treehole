@@ -1,6 +1,9 @@
 const headers = {
   "Content-Type": "application/json; charset=utf-8",
   "Cache-Control": "no-store",
+  "X-Content-Type-Options": "nosniff",
+  "Referrer-Policy": "strict-origin-when-cross-origin",
+  "Permissions-Policy": "geolocation=(), camera=(), microphone=()",
 };
 
 const allowedKinds = new Set(["whisper", "letter", "echo"]);
@@ -136,7 +139,7 @@ export async function onRequestGet(context) {
   }
 
   const kind = url.searchParams.get("kind") || "whisper";
-  const limit = Math.min(Math.max(Number(url.searchParams.get("limit")) || 50, 1), 100);
+  const limit = Math.min(Math.max(Number(url.searchParams.get("limit")) || 100, 1), 100);
 
   if (!allowedKinds.has(kind)) return json({ error: "Invalid kind" }, 400);
 
