@@ -7,3 +7,11 @@ wrangler.jsonc
 schema.sql
 DEPLOY.md
 .assetsignore
+CLAUDE.md
+README.md
+tests
+tests/**
+.wrangler
+.wrangler/**
+node_modules
+node_modules/**
