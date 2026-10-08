@@ -396,6 +396,13 @@ async function handleMigrate(request, env) {
   return json({ migrated, skipped, errors, total: ids.length });
 }
 
+function notFound() {
+  return new Response("Not found", {
+    status: 404,
+    headers: { "content-type": "text/plain; charset=utf-8", ...SECURITY_HEADERS },
+  });
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -403,7 +410,15 @@ export default {
     if (url.pathname === "/api/posts") return handlePosts(request, env);
     if (url.pathname === "/api/photos") return handlePhotos(request, env);
     if (url.pathname === "/api/migrate") return handleMigrate(request, env);
+    if (url.pathname.startsWith("/api/")) return json({ error: "Not found." }, 404);
 
-    return withSecurityHeaders(await env.ASSETS.fetch(request));
+    // Static assets (index.html, icons, 404.html). Guard against a missing
+    // ASSETS binding so a config slip returns 404 instead of a 1101 crash.
+    if (!env.ASSETS) return notFound();
+    try {
+      return withSecurityHeaders(await env.ASSETS.fetch(request));
+    } catch {
+      return notFound();
+    }
   },
 };
