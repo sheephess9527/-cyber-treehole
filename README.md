@@ -76,6 +76,11 @@ node tests/migrate.test.mjs   # 一次性迁移接口的幂等性
 - 所有用户内容渲染前都经 `safe()` 转义；信箱联系方式只写库、任何接口都不返回。
 - 详见 [`CLAUDE.md`](./CLAUDE.md) 的「安全规则」一节。
 
+## 更新记录
+
+- 静态资源通过根目录 `_headers` 添加 nosniff、Referrer-Policy、Permissions-Policy、禁止嵌入和 CSP；Worker 生成的 API 响应不变。CSP 为现有内联脚本/样式保留 `'unsafe-inline'`，允许本站、data/blob 图片、R2 图片及 Cloudflare Web Analytics，其他来源默认拒绝。未改变缓存策略。
+- 头部回归测试：`node tests/headers.test.mjs`。`_headers` 由 Cloudflare 解析，不作为静态文件公开；详见 [Workers 静态资源头部文档](https://developers.cloudflare.com/workers/static-assets/headers/)。
+
 ## License
 
 Personal project — use and adapt freely for your own treehole.

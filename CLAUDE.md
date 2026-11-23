@@ -95,6 +95,12 @@ The canonical, tested implementation is `worker.js`.
   templates (escapes `& < > " '`). Keep using it for any new rendered field.
 - Letter **`contact` is never returned** by any GET/list response — it is
   write-only into D1.
+- Static responses use root `_headers` (parsed, not served by Cloudflare) for
+  nosniff, referrer/permissions policy, `X-Frame-Options: DENY` and CSP. Keep its
+  sources in sync with the frontend: inline script/style need `'unsafe-inline'`,
+  images need self/data/blob/R2, and optional Cloudflare Analytics needs its
+  script/connect origins. API headers remain in `worker.js`; `_headers` does
+  not apply to Worker-generated responses. Test with `node tests/headers.test.mjs`.
 
 ## 5. Data model
 
