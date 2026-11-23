@@ -84,6 +84,9 @@ Worker 测试应输出 `N 通过 / 0 失败`，对 D1/R2 做内存模拟。入�
 
 ## 更新记录
 
+- 静态资源通过根目录 `_headers` 添加 nosniff、Referrer-Policy、Permissions-Policy、禁止嵌入和 CSP；Worker 生成的 API 响应不变。CSP 为现有内联脚本/样式保留 `'unsafe-inline'`，允许本站、data/blob 图片、R2 图片及 Cloudflare Web Analytics，其他来源默认拒绝。未改变缓存策略。
+- 头部回归测试：`node tests/headers.test.mjs`。`_headers` 由 Cloudflare 解析，不作为静态文件公开；详见 [Workers 静态资源头部文档](https://developers.cloudflare.com/workers/static-assets/headers/)。
+
 - `/api/posts`（Worker 与 Pages 备用路由）：列表 `limit` 必须为正整数，省略时仍默认 100，超过 100 仍按 100 查询；非法值返回带错误信息的 400 JSON。POST / PUT 的无效 JSON、`null`、数组、数字等非对象请求体，以及无法转换为文本的字段，均返回 400，不再抛出未处理异常。鉴权和限流规则不变。
 - 回归测试：`node tests/posts-input.test.mjs`（覆盖 Worker 与 Pages 的输入校验）。
 - GitHub Pages 镜像（`*.github.io`）在首页和深路径 404 页自动跳转至 `https://www.zhengjianyong.de`，仅移除路径开头完整的 `/-cyber-treehole` 前缀，保留其余路径、查询参数与 hash；禁用 JavaScript 时提供正式站链接。正式域名、Workers 预览和 localhost 不跳转。

@@ -97,7 +97,7 @@ Variable name / 绑定变量名: PHOTOS
 Bucket: treehole-photos
 ```
 
-R2 桶需开启公共访问（或使用自定义域名），并在 `worker.js` / `functions/api/photos.js` 中配置 `R2_PUBLIC_URL` 为对应的公开访问地址。
+R2 桶需开启公共访问（或使用自定义域名），并在 `worker.js` / `functions/api/photos.js` 中配置 `R2_PUBLIC_URL` 为对应的公开访问地址，并把同一地址写入根目录 `_headers` 的 CSP `img-src`（否则回响详情的原图会被浏览器拦截）。
 
 ## 旧图片迁移
 
