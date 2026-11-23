@@ -375,7 +375,7 @@
       // Add default echoes if needed (you had some before)
       const defaultEchoes = [];
 
-      let tab = "whispers";
+      let tab = null;
       let activeEcho = null;
       let draftPhoto = "";
       let sharedWhispers = null;
@@ -954,8 +954,8 @@
       }
       function applyRoute() {
         const route = parseHash();
+        tab = route?.tab ?? null;
         if (!route) { activeEcho = null; renderEntrance(); return; }
-        tab = route.tab;
         activeEcho = tab === "echoes" && Number.isInteger(route.echo) ? route.echo : null;
         renderApp();
       }

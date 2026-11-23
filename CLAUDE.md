@@ -165,9 +165,11 @@ The fix has three parts (all shipped):
 ## 8. Frontend notes (`index.html`)
 
 - **Routing:** hash-based. `#whispers`, `#echoes`, `#echoes/<index>`, `#about`.
-  `applyRoute()` reads `location.hash`; `go()`/`switchTab()` set it. Refresh and
-  back button work. Echo detail uses the **array index** into the combined list
-  (public + local + default) — fragile if order changes, but fine in practice.
+  `applyRoute()` reads `location.hash`; `go()`/`switchTab()` set it. The entrance
+  has no active tab, so background prefetch can populate the cache without
+  changing the view. Refresh and back button work. Echo detail uses the **array
+  index** into the combined list (public + local + default) — fragile if order
+  changes, but fine in practice.
 - **Caching:** whispers, letters, and echoes use stale-while-revalidate via
   `localStorage` (`treehole.cache.*`), revalidated once per session. The echo
   cache stores a **lightened** form only — `lightenEchoForCache`/`writeEchoCache`
