@@ -82,6 +82,11 @@ Worker 测试应输出 `N 通过 / 0 失败`，对 D1/R2 做内存模拟。入�
 - 所有用户内容渲染前都经 `safe()` 转义；信箱联系方式只写库、任何接口都不返回。
 - 详见 [`CLAUDE.md`](./CLAUDE.md) 的「安全规则」一节。
 
+## 更新记录
+
+- `/api/posts`（Worker 与 Pages 备用路由）：列表 `limit` 必须为正整数，省略时仍默认 100，超过 100 仍按 100 查询；非法值返回带错误信息的 400 JSON。POST / PUT 的无效 JSON、`null`、数组、数字等非对象请求体，以及无法转换为文本的字段，均返回 400，不再抛出未处理异常。鉴权和限流规则不变。
+- 回归测试：`node tests/posts-input.test.mjs`（覆盖 Worker 与 Pages 的输入校验）。
+
 ## License
 
 Personal project — use and adapt freely for your own treehole.
