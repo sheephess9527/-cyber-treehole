@@ -5,7 +5,7 @@ import { setImmediate } from "node:timers/promises";
 import { runInNewContext } from "node:vm";
 
 const html = readFileSync(new URL("../index.html", import.meta.url), "utf8");
-const script = html.match(/<script>([\s\S]*?)<\/script>/)[1];
+const script = html.match(/<script id="treehole-app">([\s\S]*?)<\/script>/)[1];
 
 function openPage({ hash = "", cached = false } = {}) {
   const location = new URL("https://treehole.example/" + hash);

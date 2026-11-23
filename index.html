@@ -2,7 +2,7 @@
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
-    <script>
+    <script id="pages-redirect">
       if (location.hostname.endsWith(".github.io")) {
         const path = location.pathname.replace(/^\/-cyber-treehole(?=\/|$)/, "") || "/";
         location.replace("https://www.zhengjianyong.de" + path + location.search + location.hash);
@@ -293,7 +293,7 @@
   <body>
     <noscript><p>正式站点：<a href="https://www.zhengjianyong.de/">赛博自留地</a></p></noscript>
     <div id="root"></div>
-    <script>
+    <script id="treehole-app">
       const storage = {
         whispers: "treehole.whispers",
         echoes: "treehole.echoes",

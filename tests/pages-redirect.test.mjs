@@ -6,7 +6,7 @@ const check = (name, cond) => { console.log(`${cond ? "✅" : "❌"} ${name}`); 
 
 for (const file of ["index.html", "404.html"]) {
   const html = readFileSync(new URL(`../${file}`, import.meta.url), "utf8");
-  const script = html.match(/<script>([\s\S]*?)<\/script>/)[1];
+  const script = html.match(/<script id="pages-redirect">([\s\S]*?)<\/script>/)[1];
   const redirect = (url) => {
     const parsed = new URL(url);
     let target;
