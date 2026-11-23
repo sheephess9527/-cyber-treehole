@@ -139,7 +139,12 @@ export async function onRequestGet(context) {
   }
 
   const kind = url.searchParams.get("kind") || "whisper";
-  const limit = Math.min(Math.max(Number(url.searchParams.get("limit")) || 100, 1), 100);
+  const limitParam = url.searchParams.get("limit");
+  const requestedLimit = limitParam === null ? 100 : Number(limitParam);
+  if (!Number.isInteger(requestedLimit) || requestedLimit <= 0) {
+    return json({ error: "Limit must be a positive integer." }, 400);
+  }
+  const limit = Math.min(requestedLimit, 100);
 
   if (!allowedKinds.has(kind)) return json({ error: "Invalid kind" }, 400);
 
@@ -191,9 +196,18 @@ export async function onRequestPost(context) {
     return json({ error: "Invalid JSON" }, 400);
   }
 
-  const kind = String(payload.kind || "").trim();
-  const content = String(payload.content || "").trim();
-  const contact = String(payload.contact || "").trim();
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return json({ error: "JSON body must be an object." }, 400);
+  }
+
+  let kind, content, contact;
+  try {
+    kind = String(payload.kind || "").trim();
+    content = String(payload.content || "").trim();
+    contact = String(payload.contact || "").trim();
+  } catch {
+    return json({ error: "Invalid post fields." }, 400);
+  }
 
   if (!allowedKinds.has(kind)) return json({ error: "Invalid kind" }, 400);
   if (restrictedKinds.has(kind)) {
@@ -256,7 +270,15 @@ export async function onRequestPut(context) {
   } catch {
     return json({ error: "Invalid JSON" }, 400);
   }
-  const reply = String(body.reply || "").trim();
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    return json({ error: "JSON body must be an object." }, 400);
+  }
+  let reply;
+  try {
+    reply = String(body.reply || "").trim();
+  } catch {
+    return json({ error: "Invalid reply field." }, 400);
+  }
   if (reply.length > 2000) return json({ error: "Reply is too long" }, 400);
 
   await ensureSchema(db);

@@ -165,10 +165,12 @@ async function handlePosts(request, env) {
       return json({ error: "Unsupported post kind." }, 400);
     }
 
-    const limit = Math.min(
-      Math.max(Number(url.searchParams.get("limit")) || 100, 1),
-      100
-    );
+    const limitParam = url.searchParams.get("limit");
+    const requestedLimit = limitParam === null ? 100 : Number(limitParam);
+    if (!Number.isInteger(requestedLimit) || requestedLimit <= 0) {
+      return json({ error: "Limit must be a positive integer." }, 400);
+    }
+    const limit = Math.min(requestedLimit, 100);
 
     let posts;
     if (kind === "echo") {
@@ -214,9 +216,18 @@ async function handlePosts(request, env) {
       return json({ error: "Invalid JSON body." }, 400);
     }
 
-    const kind = String(body.kind || "").trim();
-    const content = String(body.content || "").trim();
-    const contact = String(body.contact || "").trim();
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      return json({ error: "JSON body must be an object." }, 400);
+    }
+
+    let kind, content, contact;
+    try {
+      kind = String(body.kind || "").trim();
+      content = String(body.content || "").trim();
+      contact = String(body.contact || "").trim();
+    } catch {
+      return json({ error: "Invalid post fields." }, 400);
+    }
 
     if (!ALLOWED_KINDS.has(kind)) {
       return json({ error: "Unsupported post kind." }, 400);
@@ -295,7 +306,15 @@ async function handlePosts(request, env) {
     } catch {
       return json({ error: "Invalid JSON body." }, 400);
     }
-    const reply = String(body.reply || "").trim();
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      return json({ error: "JSON body must be an object." }, 400);
+    }
+    let reply;
+    try {
+      reply = String(body.reply || "").trim();
+    } catch {
+      return json({ error: "Invalid reply field." }, 400);
+    }
     if (reply.length > 2000) {
       return json({ error: "Reply is too long." }, 400);
     }
