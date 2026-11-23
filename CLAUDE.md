@@ -164,10 +164,14 @@ The fix has three parts (all shipped):
 
 ## 8. Frontend notes (`index.html`)
 
-- **Routing:** hash-based. `#whispers`, `#echoes`, `#echoes/<index>`, `#about`.
+- **Routing:** hash-based. `#whispers`, `#echoes`, `#echoes/p<postId>`, `#about`.
   `applyRoute()` reads `location.hash`; `go()`/`switchTab()` set it. Refresh and
-  back button work. Echo detail uses the **array index** into the combined list
-  (public + local + default) — fragile if order changes, but fine in practice.
+  back button work. Echo details use stable keys: `p<postId>` for cloud posts,
+  `l<localId>` for local posts (UUID assigned on creation or first read of old
+  data), and `d<n>` for built-in posts. Legacy numeric indices are resolved
+  against the loaded list and replaced with stable hashes without adding history.
+  Unknown keys wait for cloud loading/revalidation before falling back to
+  `#echoes`; cached lists can display matching details immediately.
 - **Caching:** whispers, letters, and echoes use stale-while-revalidate via
   `localStorage` (`treehole.cache.*`), revalidated once per session. The echo
   cache stores a **lightened** form only — `lightenEchoForCache`/`writeEchoCache`
