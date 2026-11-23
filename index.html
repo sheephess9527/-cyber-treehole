@@ -399,7 +399,7 @@
 
       function safeImage(src) {
         if (!src) return images.entrance;
-        return src.startsWith("data:") || src.startsWith("http") ? src : images.entrance;
+        return src.startsWith("data:") || src.startsWith("http") || /^\/api\/posts\?thumb=\d+$/.test(src) ? src : images.entrance;
       }
 
       const API_PHOTOS = "/api/photos";
@@ -711,7 +711,7 @@
           title: e.title,
           body: e.body,
           date: e.date,
-          thumb: e.thumb && e.thumb.startsWith("http") ? e.thumb : "",
+          thumb: e.thumb && (/^https?:\/\//.test(e.thumb) || /^\/api\/posts\?thumb=\d+$/.test(e.thumb)) ? e.thumb : "",
           image: e.image && e.image.startsWith("http") ? e.image : "",
           personal: !!e.personal,
         }));
