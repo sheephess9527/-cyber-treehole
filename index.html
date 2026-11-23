@@ -385,6 +385,7 @@
       let loadingLetters = false;
       let loadingEchoes = false;   // 新增
       let echoRoutePending = false;
+      const echoDetails = new Map();
       let echoesError = false;     // true when the cloud echo fetch failed
       let replyingLetterId = null;
       let lettersVisible = 12;
@@ -808,6 +809,7 @@
         try {
           await deleteShared(id);
           sharedEchoes = (sharedEchoes || []).filter((item) => item.id !== id);
+          echoDetails.set(`p${id}`, { pending: false, item: null });
           writeEchoCache(sharedEchoes);
           go("echoes");
         } catch (err) { window.alert(deleteErrorMessage(err)); }
@@ -953,14 +955,38 @@
         return `p${item.id}`;
       }
 
-      function resolveEchoRoute(key, items, loading) {
+      function resolveEchoRoute(key, items, loading, detail = null) {
         if (key === null) return { key: null, item: null, replace: false };
         const legacy = /^\d+$/.test(key);
         if (legacy && loading) return { key, item: null, replace: false };
         const item = legacy ? items[Number(key)] : items.find((item) => echoKey(item) === key);
         if (item) return { key: echoKey(item), item, replace: legacy };
+        if (!legacy && detail?.item) return { key, item: detail.item, replace: false };
         if (loading) return { key, item: null, replace: false };
+        if (/^p[1-9]\d*$/.test(key)) {
+          if (!detail) return { key, item: null, replace: false, fetch: true };
+          if (detail.pending) return { key, item: null, replace: false };
+        }
         return { key: null, item: null, replace: true };
+      }
+
+      function loadEchoDetail(key) {
+        if (echoDetails.has(key)) return echoDetails.get(key);
+        const state = { pending: true, item: null };
+        echoDetails.set(key, state);
+        fetch(`${API_POSTS}?id=${key.slice(1)}`, { headers: { "Accept": "application/json" } })
+          .then(async (response) => {
+            if (!response.ok) return;
+            const { post } = await response.json();
+            if (post?.kind !== "echo" || `p${post.id}` !== key) return;
+            state.item = parseEchoItems([{ id: post.id, text: post.content, time: toDisplayTime(post.created_at) }])[0];
+          })
+          .catch(() => {})
+          .finally(() => {
+            state.pending = false;
+            if (tab === "echoes" && activeEcho === key) renderEchoes();
+          });
+        return state;
       }
 
       function parseHash(hash = location.hash) {
@@ -1090,7 +1116,8 @@
       function renderEchoes() {
         loadEchoes();  // 加载云端回响
         const items = allEchoes();
-        const resolved = resolveEchoRoute(activeEcho, items, loadingEchoes);
+        let resolved = resolveEchoRoute(activeEcho, items, loadingEchoes, echoDetails.get(activeEcho));
+        if (resolved.fetch) resolved = resolveEchoRoute(activeEcho, items, loadingEchoes, loadEchoDetail(activeEcho));
         echoRoutePending = resolved.key !== null && resolved.item === null;
         activeEcho = resolved.key;
         if (resolved.replace) history.replaceState(null, "", activeEcho === null ? "#echoes" : `#echoes/${activeEcho}`);

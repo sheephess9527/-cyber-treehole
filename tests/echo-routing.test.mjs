@@ -41,10 +41,33 @@ check("legacy indices wait for cloud ordering", !resolve("0", [local[0]], true).
 check("cached matching key renders while refreshing", resolve("p50", items, true).item.id === 50);
 for (const key of ["p999", "999", "-1", "nope", "p<script>"]) {
   check(`unknown ${key} waits while loading`, !resolve(key, [], true).replace);
-  check(`unknown ${key} falls back after loading`, resolve(key, items, false).key === null && resolve(key, items, false).replace);
+  check(`unknown ${key} falls back after loading and detail lookup`, resolve(key, items, false, { pending: false, item: null }).key === null);
 }
 check("cold deep link resolves after data arrives", resolve("p50", [], true).key === "p50" && resolve("p50", items, false).item.id === 50);
-check("empty loaded list falls back", resolve("p50", [], false).replace);
+check("missing cloud post requests a detail lookup", resolve("p50", [], false).fetch);
+check("pending detail keeps the route", resolve("p50", [], false, { pending: true, item: null }).key === "p50");
+check("archived detail resolves outside grid", resolve("p50", [], false, { pending: false, item: { id: 50 } }).item.id === 50);
+for (const scenario of ["echo", "404", "letter", "network"]) {
+  let requests = 0, renders = 0;
+  const details = new Map();
+  const detailContext = vm.createContext({
+    echoDetails: details, API_POSTS: "/api/posts", tab: "echoes", activeEcho: "p50",
+    fetch: async () => {
+      requests++;
+      if (scenario === "network") throw new Error("offline");
+      return { ok: scenario !== "404", json: async () => ({ post: { id: 50, kind: scenario, content: "{}" } }) };
+    },
+    parseEchoItems: (items) => items, toDisplayTime: () => "", renderEchoes: () => renders++,
+  });
+  vm.runInContext(extract("loadEchoDetail"), detailContext);
+  const pending = detailContext.loadEchoDetail("p50");
+  check(`${scenario}: detail pending`, pending.pending);
+  detailContext.loadEchoDetail("p50");
+  await new Promise((resolve) => setImmediate(resolve));
+  detailContext.loadEchoDetail("p50");
+  check(`${scenario}: one request and completion render`, requests === 1 && renders === 1 && !pending.pending);
+  check(`${scenario}: only echoes are retained`, !!pending.item === (scenario === "echo"));
+}
 removeEcho("ltest-uuid");
 check("local removal uses key", local.length === 0);
 for (const scenario of [
