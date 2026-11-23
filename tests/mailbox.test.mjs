@@ -32,8 +32,8 @@ async function send(message, contact = "", response = { status: 200, body: { pos
   return { ...calls, status: elements.mailStatus.textContent, message: elements.mailMessage.value, contact: elements.mailContact.value };
 }
 
-check("正文表单限制及可见提示", /id="mailMessage"[^>]*maxlength="2000"/.test(html) && html.includes("正文最多 2000 字符"));
-check("联系方式表单限制及可见提示", /id="mailContact"[^>]*maxlength="500"/.test(html) && html.includes("联系方式最多 500 字符"));
+check("正文不静默截断且有可见提示", !/id="mailMessage"[^>]*maxlength/.test(html) && html.includes("正文最多 2000 字符"));
+check("联系方式不静默截断且有可见提示", !/id="mailContact"[^>]*maxlength/.test(html) && html.includes("联系方式最多 500 字符"));
 for (const [name, message, contact, limit] of [
   ["正文", "字".repeat(2001), "", "2000"],
   ["联系方式", "你好", "a".repeat(501), "500"],

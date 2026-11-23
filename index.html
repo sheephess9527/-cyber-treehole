@@ -1252,8 +1252,8 @@
           <main class="narrow fade">
             <p class="about-copy serif">这个域名暂时不承担身份，也不承担作品集。它只是我在网络深处留出的一小块暗房，用来存放不急着被理解的句子、照片和沉默。</p>
             <form class="mailbox" id="mailForm">
-              <textarea class="field-box" id="mailMessage" rows="5" maxlength="2000" aria-describedby="mailLimits" placeholder="想对树洞说的话...">${safe(loadDraft("letter").message || "")}</textarea>
-              <input class="field-box" id="mailContact" maxlength="500" aria-describedby="mailLimits" placeholder="你的联系方式（选填，若需回信）" value="${safe(loadDraft("letter").contact || "")}">
+              <textarea class="field-box" id="mailMessage" rows="5" aria-describedby="mailLimits" placeholder="想对树洞说的话...">${safe(loadDraft("letter").message || "")}</textarea>
+              <input class="field-box" id="mailContact" aria-describedby="mailLimits" placeholder="你的联系方式（选填，若需回信）" value="${safe(loadDraft("letter").contact || "")}">
               <p id="mailLimits" class="status-line">正文最多 2000 字符，联系方式最多 500 字符。</p>
               <button class="ghost-button serif" type="submit">[ 投递 ]</button>
               <p id="mailStatus" class="status-line">${loadingLetters && !sharedLetters ? "正在读取云端留言..." : ""}</p>
