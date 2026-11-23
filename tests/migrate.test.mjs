@@ -82,7 +82,9 @@ await postR({ kind: "whisper", content: "hello" });
   check("迁移后无 base64 大图", parsed.filter((p) => p.image && p.image.startsWith("data:")).length === 0);
   // After migration the list strips nothing (all R2 URLs), so image is kept.
   check("迁移后 image 均为 R2 URL", parsed.filter((p) => p.image && p.image.startsWith("https://")).length === 3);
-  check("缩略图未被修改", parsed.every((p) => p.thumb === "data:image/jpeg;base64,TINY"));
+  check("列表缩略图改为独立 URL", posts.every((p) => JSON.parse(p.content).thumb === `/api/posts?thumb=${p.id}`));
+  const detail = await (await worker.fetch(new Request(`${BASE}/api/posts?id=${posts[0].id}`), env)).json();
+  check("迁移后存储的缩略图未被修改", JSON.parse(detail.post.content).thumb === "data:image/jpeg;base64,TINY");
 }
 
 {

@@ -17,7 +17,7 @@ A modern, secure, and lightweight personal sanctuary built on serverless edge in
 
 ## 功能 / Features
 
-- 仪式感入口页
+- 仪式感入口页：后台预加载不切换页面，点击「步入树洞」后才打开呢喃墙
 - 呢喃墙（作者发布，公开浏览）
 - 光影与回响（图文记录，照片存 R2；删除回响时同步删除 R2 原图）
 - 信箱留言（访客可投递，作者可内联回复）
@@ -58,11 +58,17 @@ A modern, secure, and lightweight personal sanctuary built on serverless edge in
 node tests/core.test.mjs      # 发帖 / 鉴权 / 限流 / 隐私 / 回响剥离大图
 node tests/r2.test.mjs        # R2 照片上传 + 回响流程 + 删除清理
 node tests/migrate.test.mjs   # 一次性迁移接口的幂等性
+node tests/routing.test.mjs   # Worker 路由与 404
+node --test tests/entrance.test.mjs  # 入口页与后台预加载
 ```
 
-三个都应输出 `N 通过 / 0 失败`。测试直接 import `worker.js`，对 D1/R2 做内存模拟。
+Worker 测试应输出 `N 通过 / 0 失败`，对 D1/R2 做内存模拟。入口页测试在 Node 中执行页面脚本并模拟云端响应。
 
 ## 数据说明
+
+信箱正文最多 2000 字符，联系方式最多 500 字符（与服务端一致，表情等字符按 JavaScript 字符串长度计数）。表单显示长度提示（不用 maxlength，避免粘贴长文被静默截断），投递前检查长度，超长时提示缩短，不发送。服务端返回 4xx 时显示拒绝原因，保留输入供修改，不再显示“已保存在本机”；只有网络故障或服务端 5xx 等云端不可用情况才沿用本机保存。
+
+信箱前端回归测试：`node tests/mailbox.test.mjs`（长度边界、空白输入、4xx 拒绝与离线回退）。
 
 | 类型 | 谁可发布 | 谁可见 |
 |------|----------|--------|
@@ -80,6 +86,9 @@ node tests/migrate.test.mjs   # 一次性迁移接口的幂等性
 
 - 静态资源通过根目录 `_headers` 添加 nosniff、Referrer-Policy、Permissions-Policy、禁止嵌入和 CSP；Worker 生成的 API 响应不变。CSP 为现有内联脚本/样式保留 `'unsafe-inline'`，允许本站、data/blob 图片、R2 图片及 Cloudflare Web Analytics，其他来源默认拒绝。未改变缓存策略。
 - 头部回归测试：`node tests/headers.test.mjs`。`_headers` 由 Cloudflare 解析，不作为静态文件公开；详见 [Workers 静态资源头部文档](https://developers.cloudflare.com/workers/static-assets/headers/)。
+
+- `/api/posts`（Worker 与 Pages 备用路由）：列表 `limit` 必须为正整数，省略时仍默认 100，超过 100 仍按 100 查询；非法值返回带错误信息的 400 JSON。POST / PUT 的无效 JSON、`null`、数组、数字等非对象请求体，以及无法转换为文本的字段，均返回 400，不再抛出未处理异常。鉴权和限流规则不变。
+- 回归测试：`node tests/posts-input.test.mjs`（覆盖 Worker 与 Pages 的输入校验）。
 
 ## License
 

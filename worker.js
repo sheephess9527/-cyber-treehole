@@ -20,6 +20,24 @@ async function deleteEchoPhotos(env, contentStr) {
   } catch {}
 }
 
+function thumbResponse(contentStr) {
+  try {
+    const obj = JSON.parse(contentStr);
+    const match = typeof obj?.thumb === "string" && obj.thumb.match(/^data:(image\/(?:jpeg|png|gif|webp|avif));base64,([A-Za-z0-9+/]+={0,2})$/);
+    if (match) {
+      const binary = atob(match[2]);
+      if (binary.length) return new Response(Uint8Array.from(binary, (c) => c.charCodeAt(0)), {
+        headers: {
+          "content-type": match[1],
+          "cache-control": "public, max-age=3600",
+          "x-content-type-options": "nosniff",
+        },
+      });
+    }
+  } catch {}
+  return new Response("Not found", { status: 404 });
+}
+
 function safeEqual(a, b) {
   if (typeof a !== "string" || typeof b !== "string" || a.length !== b.length) return false;
   let mismatch = 0;
@@ -35,16 +53,14 @@ function authMatches(provided, expected) {
   return safeEqual(String(provided || "").trim(), String(expected || "").trim());
 }
 
-// Strip the full-size base64 photo from echo list responses so the grid
-// payload stays small on mobile. R2-backed echoes store a short URL instead
-// of base64, so those are cheap and can be left in — the guard on startsWith
-// keeps backward-compat with older posts that still have inline base64.
-function lightenEchoContent(contentStr) {
+// Keep list content lightweight; inline thumbnails load through their own URL.
+function lightenEchoContent(contentStr, id) {
   try {
     const obj = JSON.parse(contentStr);
-    if (obj && typeof obj === "object" && obj.image && obj.image.startsWith("data:")) {
-      const { image, ...rest } = obj;
-      return JSON.stringify(rest);
+    if (obj && typeof obj === "object") {
+      if (typeof obj.image === "string" && obj.image.startsWith("data:")) delete obj.image;
+      if (typeof obj.thumb === "string" && obj.thumb.startsWith("data:")) obj.thumb = `/api/posts?thumb=${id}`;
+      return JSON.stringify(obj);
     }
   } catch {}
   return contentStr;
@@ -145,6 +161,16 @@ async function handlePosts(request, env) {
       return json({ configured, ok });
     }
 
+    const thumbParam = url.searchParams.get("thumb");
+    if (thumbParam !== null) {
+      const id = Number(thumbParam);
+      if (!Number.isInteger(id) || id <= 0) return new Response("Not found", { status: 404 });
+      const row = await env.DB.prepare(
+        "SELECT content FROM public_posts WHERE id = ? AND kind = 'echo'"
+      ).bind(id).first();
+      return thumbResponse(row?.content);
+    }
+
     const idParam = url.searchParams.get("id");
     if (idParam !== null) {
       const id = Number(idParam);
@@ -165,10 +191,12 @@ async function handlePosts(request, env) {
       return json({ error: "Unsupported post kind." }, 400);
     }
 
-    const limit = Math.min(
-      Math.max(Number(url.searchParams.get("limit")) || 100, 1),
-      100
-    );
+    const limitParam = url.searchParams.get("limit");
+    const requestedLimit = limitParam === null ? 100 : Number(limitParam);
+    if (!Number.isInteger(requestedLimit) || requestedLimit <= 0) {
+      return json({ error: "Limit must be a positive integer." }, 400);
+    }
+    const limit = Math.min(requestedLimit, 100);
 
     let posts;
     if (kind === "echo") {
@@ -179,17 +207,24 @@ async function handlePosts(request, env) {
       // base64 blobs are removed. The full photo for old posts is still
       // reachable through the by-id detail query above.
       const { results } = await env.DB.prepare(
-        `SELECT id, kind,
+        `WITH echo_posts AS (SELECT id, kind,
            CASE WHEN json_valid(content)
                      AND substr(json_extract(content, '$.image'), 1, 5) = 'data:'
                 THEN json_remove(content, '$.image')
-                ELSE content END AS content,
+                ELSE content END AS image_content,
            created_at, reply
-         FROM public_posts WHERE kind = ? ORDER BY created_at DESC, id DESC LIMIT ?`
+         FROM public_posts WHERE kind = ? ORDER BY created_at DESC, id DESC LIMIT ?
+        ) SELECT id, kind,
+           CASE WHEN json_valid(image_content)
+                     AND substr(json_extract(image_content, '$.thumb'), 1, 5) = 'data:'
+                THEN json_set(image_content, '$.thumb', '/api/posts?thumb=' || id)
+                ELSE image_content END AS content,
+           created_at, reply
+         FROM echo_posts ORDER BY created_at DESC, id DESC`
       )
         .bind(kind, limit)
         .all();
-      posts = (results || []).map((p) => ({ ...p, content: lightenEchoContent(p.content) }));
+      posts = (results || []).map((p) => ({ ...p, content: lightenEchoContent(p.content, p.id) }));
     } else {
       const { results } = await env.DB.prepare(
         "SELECT id, kind, content, created_at, reply FROM public_posts WHERE kind = ? ORDER BY created_at DESC, id DESC LIMIT ?"
@@ -214,9 +249,18 @@ async function handlePosts(request, env) {
       return json({ error: "Invalid JSON body." }, 400);
     }
 
-    const kind = String(body.kind || "").trim();
-    const content = String(body.content || "").trim();
-    const contact = String(body.contact || "").trim();
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      return json({ error: "JSON body must be an object." }, 400);
+    }
+
+    let kind, content, contact;
+    try {
+      kind = String(body.kind || "").trim();
+      content = String(body.content || "").trim();
+      contact = String(body.contact || "").trim();
+    } catch {
+      return json({ error: "Invalid post fields." }, 400);
+    }
 
     if (!ALLOWED_KINDS.has(kind)) {
       return json({ error: "Unsupported post kind." }, 400);
@@ -295,7 +339,15 @@ async function handlePosts(request, env) {
     } catch {
       return json({ error: "Invalid JSON body." }, 400);
     }
-    const reply = String(body.reply || "").trim();
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      return json({ error: "JSON body must be an object." }, 400);
+    }
+    let reply;
+    try {
+      reply = String(body.reply || "").trim();
+    } catch {
+      return json({ error: "Invalid reply field." }, 400);
+    }
     if (reply.length > 2000) {
       return json({ error: "Reply is too long." }, 400);
     }
