@@ -47,5 +47,25 @@ check("cold deep link resolves after data arrives", resolve("p50", [], true).key
 check("empty loaded list falls back", resolve("p50", [], false).replace);
 removeEcho("ltest-uuid");
 check("local removal uses key", local.length === 0);
+for (const scenario of [
+  { name: "unchanged gallery", changed: false, pending: false, renders: 0 },
+  { name: "changed gallery", changed: true, pending: false, renders: 1 },
+  { name: "unchanged unresolved route", changed: false, pending: true, renders: 1 },
+  { name: "failed unresolved route", changed: false, pending: true, error: true, renders: 2 },
+]) {
+  let renders = 0;
+  const cached = [{ id: 50 }];
+  const refresh = vm.createContext({
+    loadingEchoes: false, echoRoutePending: scenario.pending, tab: "echoes",
+    sharedEchoes: cached, echoesError: false,
+    fetchShared: () => scenario.error ? Promise.reject(new Error("offline")) : Promise.resolve(scenario.changed ? [{ id: 48 }] : cached),
+    parseEchoItems: (items) => items, writeEchoCache: () => {},
+    renderEchoes: () => { renders++; },
+  });
+  vm.runInContext(extract("revalidateEchoes"), refresh);
+  refresh.revalidateEchoes();
+  await new Promise((resolve) => setImmediate(resolve));
+  check(`${scenario.name}: only necessary renders`, renders === scenario.renders && !refresh.loadingEchoes);
+}
 console.log(`\n${pass} 通过 / ${fail} 失败`);
 if (fail) process.exit(1);

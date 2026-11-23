@@ -384,6 +384,7 @@
       let loadingWhispers = false;
       let loadingLetters = false;
       let loadingEchoes = false;   // 新增
+      let echoRoutePending = false;
       let echoesError = false;     // true when the cloud echo fetch failed
       let replyingLetterId = null;
       let lettersVisible = 12;
@@ -906,7 +907,7 @@
             echoesError = !sharedEchoes || !sharedEchoes.length;
             if (tab === "echoes") renderEchoes();
           })
-          .finally(() => { loadingEchoes = false; if (tab === "echoes") renderEchoes(); });
+          .finally(() => { loadingEchoes = false; if (tab === "echoes" && echoRoutePending) renderEchoes(); });
       }
 
       function loadEchoes() {
@@ -1090,6 +1091,7 @@
         loadEchoes();  // 加载云端回响
         const items = allEchoes();
         const resolved = resolveEchoRoute(activeEcho, items, loadingEchoes);
+        echoRoutePending = resolved.key !== null && resolved.item === null;
         activeEcho = resolved.key;
         if (resolved.replace) history.replaceState(null, "", activeEcho === null ? "#echoes" : `#echoes/${activeEcho}`);
         if (activeEcho !== null) {
