@@ -113,19 +113,25 @@ Table `public_posts`:
 ```json
 { "title": "...", "body": "...", "image": "<R2 url or data: base64>", "thumb": "data:image/jpeg;base64,..." }
 ```
-- New echoes store `image` as a short **R2 URL**; `thumb` is a small inline
-  base64 preview (~tens of KB) used by the grid.
+- New echoes store `image` as a short **R2 URL**; `thumb` is an inline base64
+  preview. Lists replace inline `thumb` with `/api/posts?thumb=<id>` so the grid
+  loads previews on demand; http(s) thumbnails are kept unchanged.
 - Old echoes stored `image` as a multi-MB inline base64 `data:` URL. These were
   migrated to R2 via `/api/migrate` (see §7).
 
 ## 6. API reference (`worker.js`)
 
-All JSON, `cache-control: no-store`.
+JSON responses use `cache-control: no-store`; thumbnail images are cached separately.
 
 - `GET  /api/posts?kind=whisper|echo|letter&limit=N` — list newest-first.
   - For `kind=echo`, the query **strips inline base64 `image` at the SQL layer**
     (`json_remove` guarded by `json_valid`) so D1 never returns multi-MB rows.
-    R2-URL images are kept; `thumb` is kept. This is critical — see §7.
+    R2-URL images are kept; inline `thumb` is replaced with a URL at the SQL
+    layer too. This is critical — see §7.
+- `GET /api/posts?thumb=N` — single echo's inline thumbnail as image bytes,
+  with `public, max-age=3600` so deleted echoes' thumbnails expire within an hour.
+  Missing/non-echo/invalid thumbnails
+  return 404. No post metadata or contact information is returned.
 - `GET  /api/posts?id=N` — single post with **full** `content` (base64 intact
   for old echoes). Used to lazy-load a full photo on the detail view.
 - `GET  /api/posts?check=author` (header `x-author-key`) — returns
@@ -150,8 +156,9 @@ query response, so the **entire echo grid failed to load** ("云端暂不可用"
 Whispers/letters were fine because they have no base64.
 
 The fix has three parts (all shipped):
-1. **List query strips base64 at the SQL layer** (`json_remove`) so the grid is
-   always light, regardless of migration state.
+1. **List query strips base64 at the SQL layer**: inline `image` is removed and
+   inline `thumb` becomes a thumbnail endpoint URL. The grid is always light,
+   regardless of migration state; image bytes load only when needed.
 2. **`/api/migrate`** moves each old base64 image into R2 and rewrites the row
    to a short URL. It reads **ids first, then one row at a time**, so it can't
    hit the same response-size overflow.
@@ -165,15 +172,20 @@ The fix has three parts (all shipped):
 ## 8. Frontend notes (`index.html`)
 
 - **Routing:** hash-based. `#whispers`, `#echoes`, `#echoes/<index>`, `#about`.
-  `applyRoute()` reads `location.hash`; `go()`/`switchTab()` set it. Refresh and
-  back button work. Echo detail uses the **array index** into the combined list
-  (public + local + default) — fragile if order changes, but fine in practice.
+  `applyRoute()` reads `location.hash`; `go()`/`switchTab()` set it. The entrance
+  has no active tab, so background prefetch can populate the cache without
+  changing the view. Refresh and back button work. Echo detail uses the **array
+  index** into the combined list (public + local + default) — fragile if order
+  changes, but fine in practice.
 - **Caching:** whispers, letters, and echoes use stale-while-revalidate via
   `localStorage` (`treehole.cache.*`), revalidated once per session. The echo
   cache stores a **lightened** form only — `lightenEchoForCache`/`writeEchoCache`
-  drop any base64 `image`/`thumb` blobs and keep just http(s) URLs + metadata, so
+  drop any base64 `image`/`thumb` blobs and keep http(s) URLs, relative thumbnail
+  endpoint URLs, and metadata, so
   the cache can't bloat or hit quota (the original bug that broke the echo tab).
   Never write raw base64 into the echo cache.
+- Startup still prefetches the lightweight echo list. Grid images retain
+  `loading="lazy"`; full-photo detail loading and publishing are unchanged.
 - **Photos:** on echo submit → `compressImage` (≤~2MB) → `makeThumb` (small
   preview) → `uploadPhotoToR2` → store `{title,body,image:<r2url>,thumb}` in D1.
   If R2 upload fails (non-auth), it falls back to inline base64 (subject to the

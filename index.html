@@ -382,7 +382,7 @@
       // Add default echoes if needed (you had some before)
       const defaultEchoes = [];
 
-      let tab = "whispers";
+      let tab = null;
       let activeEcho = null;
       let draftPhoto = "";
       let sharedWhispers = null;
@@ -406,7 +406,7 @@
 
       function safeImage(src) {
         if (!src) return images.entrance;
-        return src.startsWith("data:") || src.startsWith("http") ? src : images.entrance;
+        return src.startsWith("data:") || src.startsWith("http") || /^\/api\/posts\?thumb=\d+$/.test(src) ? src : images.entrance;
       }
 
       const API_PHOTOS = "/api/photos";
@@ -718,7 +718,7 @@
           title: e.title,
           body: e.body,
           date: e.date,
-          thumb: e.thumb && e.thumb.startsWith("http") ? e.thumb : "",
+          thumb: e.thumb && (/^https?:\/\//.test(e.thumb) || /^\/api\/posts\?thumb=\d+$/.test(e.thumb)) ? e.thumb : "",
           image: e.image && e.image.startsWith("http") ? e.image : "",
           personal: !!e.personal,
         }));
@@ -961,8 +961,8 @@
       }
       function applyRoute() {
         const route = parseHash();
+        tab = route?.tab ?? null;
         if (!route) { activeEcho = null; renderEntrance(); return; }
-        tab = route.tab;
         activeEcho = tab === "echoes" && Number.isInteger(route.echo) ? route.echo : null;
         renderApp();
       }
@@ -1259,8 +1259,9 @@
           <main class="narrow fade">
             <p class="about-copy serif">这个域名暂时不承担身份，也不承担作品集。它只是我在网络深处留出的一小块暗房，用来存放不急着被理解的句子、照片和沉默。</p>
             <form class="mailbox" id="mailForm">
-              <textarea class="field-box" id="mailMessage" rows="5" placeholder="想对树洞说的话...">${safe(loadDraft("letter").message || "")}</textarea>
-              <input class="field-box" id="mailContact" placeholder="你的联系方式（选填，若需回信）" value="${safe(loadDraft("letter").contact || "")}">
+              <textarea class="field-box" id="mailMessage" rows="5" aria-describedby="mailLimits" placeholder="想对树洞说的话...">${safe(loadDraft("letter").message || "")}</textarea>
+              <input class="field-box" id="mailContact" aria-describedby="mailLimits" placeholder="你的联系方式（选填，若需回信）" value="${safe(loadDraft("letter").contact || "")}">
+              <p id="mailLimits" class="status-line">正文最多 2000 字符，联系方式最多 500 字符。</p>
               <button class="ghost-button serif" type="submit">[ 投递 ]</button>
               <p id="mailStatus" class="status-line">${loadingLetters && !sharedLetters ? "正在读取云端留言..." : ""}</p>
             </form>
@@ -1312,8 +1313,12 @@
           const message = document.getElementById("mailMessage").value.trim();
           const contact = document.getElementById("mailContact").value.trim();
           if (!message && !contact) return;
-          const letter = { time: stamp(), message, contact };
           const status = document.getElementById("mailStatus");
+          if (message.length > 2000 || contact.length > 500) {
+            status.textContent = message.length > 2000 ? "正文不能超过 2000 字符，请缩短后再投递。" : "联系方式不能超过 500 字符，请缩短后再投递。";
+            return;
+          }
+          const letter = { time: stamp(), message, contact };
           status.textContent = "正在写入云端...";
           try {
             const created = await createShared("letter", message || "（无正文）", contact);
@@ -1323,7 +1328,11 @@
             autoBackup();
             document.getElementById("mailStatus").textContent = "已放进树洞。";
             setTimeout(renderAbout, 700);
-          } catch {
+          } catch (err) {
+            if (err && err.status >= 400 && err.status < 500) {
+              status.textContent = `投递被拒绝，尚未发送：${err.message || "内容有误，请检查后重试。"}`;
+              return;
+            }
             write(storage.letters, [letter, ...localLetters]);
             document.getElementById("mailStatus").textContent = "云端暂不可用，已保存在本机。";
             setTimeout(renderAbout, 900);
