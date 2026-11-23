@@ -2,6 +2,12 @@
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
+    <script>
+      if (location.hostname.endsWith(".github.io")) {
+        const path = location.pathname.replace(/^\/-cyber-treehole(?=\/|$)/, "") || "/";
+        location.replace("https://www.zhengjianyong.de" + path + location.search + location.hash);
+      }
+    </script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content="一个无功利记录、反算法侵蚀的个人精神自留地。" />
     <meta property="og:type" content="website" />
@@ -285,6 +291,7 @@
     </style>
   </head>
   <body>
+    <noscript><p>正式站点：<a href="https://www.zhengjianyong.de/">赛博自留地</a></p></noscript>
     <div id="root"></div>
     <script>
       const storage = {

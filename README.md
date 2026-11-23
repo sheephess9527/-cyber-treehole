@@ -76,6 +76,12 @@ node tests/migrate.test.mjs   # 一次性迁移接口的幂等性
 - 所有用户内容渲染前都经 `safe()` 转义；信箱联系方式只写库、任何接口都不返回。
 - 详见 [`CLAUDE.md`](./CLAUDE.md) 的「安全规则」一节。
 
+## 更新记录
+
+- GitHub Pages 镜像（`*.github.io`）在首页和深路径 404 页自动跳转至 `https://www.zhengjianyong.de`，仅移除路径开头完整的 `/-cyber-treehole` 前缀，保留其余路径、查询参数与 hash；禁用 JavaScript 时提供正式站链接。正式域名、Workers 预览和 localhost 不跳转。
+- `sw.js` 不拦截页面导航，本次未修改静态缓存策略；Worker 当前使用 `404-page`（非 SPA）回退，原有 404 页面保留，仅对 GitHub Pages 域名执行跳转。
+- 镜像跳转回归测试：`node tests/pages-redirect.test.mjs`。
+
 ## License
 
 Personal project — use and adapt freely for your own treehole.
