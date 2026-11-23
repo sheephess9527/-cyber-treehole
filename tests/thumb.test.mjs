@@ -36,7 +36,7 @@ for (const implementation of ["worker", "pages"]) {
   check(`${implementation}: HTTP thumb passes through`, posts.some(p => JSON.parse(p.content).thumb === "https://example.com/thumb.jpg"));
   const response = await get(`thumb=${id}`);
   check(`${implementation}: thumb bytes and MIME`, response.status === 200 && response.headers.get("content-type") === "image/jpeg" && Buffer.from(await response.arrayBuffer()).equals(bytes));
-  check(`${implementation}: immutable browser cache`, response.headers.get("cache-control") === "public, max-age=31536000, immutable" && response.headers.get("x-content-type-options") === "nosniff");
+  check(`${implementation}: one-hour browser cache`, response.headers.get("cache-control") === "public, max-age=3600" && response.headers.get("x-content-type-options") === "nosniff");
   const detail = await (await get(`id=${id}`)).json();
   check(`${implementation}: detail unchanged`, JSON.parse(detail.post.content).thumb.startsWith("data:"));
   const invalid = [

@@ -29,7 +29,7 @@ function thumbResponse(contentStr) {
       if (binary.length) return new Response(Uint8Array.from(binary, (c) => c.charCodeAt(0)), {
         headers: {
           "content-type": match[1],
-          "cache-control": "public, max-age=31536000, immutable",
+          "cache-control": "public, max-age=3600",
           "x-content-type-options": "nosniff",
         },
       });

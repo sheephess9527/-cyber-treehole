@@ -129,7 +129,8 @@ JSON responses use `cache-control: no-store`; thumbnail images are cached separa
     R2-URL images are kept; inline `thumb` is replaced with a URL at the SQL
     layer too. This is critical — see §7.
 - `GET /api/posts?thumb=N` — single echo's inline thumbnail as image bytes,
-  with `public, max-age=31536000, immutable`. Missing/non-echo/invalid thumbnails
+  with `public, max-age=3600` so deleted echoes' thumbnails expire within an hour.
+  Missing/non-echo/invalid thumbnails
   return 404. No post metadata or contact information is returned.
 - `GET  /api/posts?id=N` — single post with **full** `content` (base64 intact
   for old echoes). Used to lazy-load a full photo on the detail view.
