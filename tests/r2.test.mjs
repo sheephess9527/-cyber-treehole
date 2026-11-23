@@ -99,7 +99,7 @@ const getEchoes = () => worker.fetch(new Request(`${BASE}/api/posts?kind=echo`),
   const list = await (await getEchoes()).json();
   const parsed = JSON.parse(list.posts[0].content);
   check("列表保留 R2 图片 URL(不被剥离)", parsed.image === uploadedUrl, `image=${parsed.image?.slice(0, 50)}`);
-  check("列表也保留缩略图与标题", parsed.thumb === "data:image/jpeg;base64,TINY" && parsed.title === "光");
+  check("列表保留缩略图 URL 与标题", parsed.thumb === `/api/posts?thumb=${list.posts[0].id}` && parsed.title === "光");
 }
 
 {
@@ -107,7 +107,7 @@ const getEchoes = () => worker.fetch(new Request(`${BASE}/api/posts?kind=echo`),
   await postEcho({ kind: "echo", content: oldContent });
   const list = await (await getEchoes()).json();
   const newest = JSON.parse(list.posts[0].content);
-  check("旧 base64 回响在列表中被剥离大图", !("image" in newest) && newest.thumb === "data:image/jpeg;base64,OLD" && newest.title === "旧");
+  check("旧 base64 回响在列表中被剥离大图", !("image" in newest) && newest.thumb === `/api/posts?thumb=${list.posts[0].id}` && newest.title === "旧");
 }
 
 {

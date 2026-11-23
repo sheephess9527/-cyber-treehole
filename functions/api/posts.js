@@ -30,6 +30,24 @@ async function deleteEchoPhotos(env, contentStr) {
   } catch {}
 }
 
+function thumbResponse(contentStr) {
+  try {
+    const obj = JSON.parse(contentStr);
+    const match = typeof obj?.thumb === "string" && obj.thumb.match(/^data:(image\/(?:jpeg|png|gif|webp|avif));base64,([A-Za-z0-9+/]+={0,2})$/);
+    if (match) {
+      const binary = atob(match[2]);
+      if (binary.length) return new Response(Uint8Array.from(binary, (c) => c.charCodeAt(0)), {
+        headers: {
+          "content-type": match[1],
+          "cache-control": "public, max-age=3600",
+          "x-content-type-options": "nosniff",
+        },
+      });
+    }
+  } catch {}
+  return new Response("Not found", { status: 404 });
+}
+
 function safeEqual(a, b) {
   if (typeof a !== "string" || typeof b !== "string" || a.length !== b.length) return false;
   let mismatch = 0;
@@ -98,15 +116,14 @@ function json(body, status = 200) {
   return new Response(JSON.stringify(body), { status, headers });
 }
 
-// Strip base64 photos from echo list responses to keep the payload small.
-// R2-backed echoes store a short URL instead of base64, so those are left in —
-// the startsWith guard keeps backward-compat with older base64 posts.
-function lightenEchoContent(contentStr) {
+// Keep list content lightweight; inline thumbnails load through their own URL.
+function lightenEchoContent(contentStr, id) {
   try {
     const obj = JSON.parse(contentStr);
-    if (obj && typeof obj === "object" && obj.image && obj.image.startsWith("data:")) {
-      const { image, ...rest } = obj;
-      return JSON.stringify(rest);
+    if (obj && typeof obj === "object") {
+      if (typeof obj.image === "string" && obj.image.startsWith("data:")) delete obj.image;
+      if (typeof obj.thumb === "string" && obj.thumb.startsWith("data:")) obj.thumb = `/api/posts?thumb=${id}`;
+      return JSON.stringify(obj);
     }
   } catch {}
   return contentStr;
@@ -125,6 +142,16 @@ export async function onRequestGet(context) {
     const configured = !!context.env.AUTHOR_KEY;
     const ok = configured && authMatches(context.request.headers.get("x-author-key"), context.env.AUTHOR_KEY);
     return json({ configured, ok });
+  }
+
+  const thumbParam = url.searchParams.get("thumb");
+  if (thumbParam !== null) {
+    const id = Number(thumbParam);
+    if (!Number.isInteger(id) || id <= 0) return new Response("Not found", { status: 404 });
+    const row = await db.prepare(
+      "SELECT content FROM public_posts WHERE id = ? AND kind = 'echo'"
+    ).bind(id).first();
+    return thumbResponse(row?.content);
   }
 
   const idParam = url.searchParams.get("id");
@@ -150,18 +177,25 @@ export async function onRequestGet(context) {
     // broke the echo grid. R2-backed echoes keep their short URL; only "data:"
     // base64 blobs are removed. Full photos stay reachable via the by-id query.
     const result = await db.prepare(`
-      SELECT id, kind,
+      WITH echo_posts AS (SELECT id, kind,
         CASE WHEN json_valid(content)
                   AND substr(json_extract(content, '$.image'), 1, 5) = 'data:'
              THEN json_remove(content, '$.image')
-             ELSE content END AS content,
+             ELSE content END AS image_content,
         created_at, reply
       FROM public_posts
       WHERE kind = ?
       ORDER BY created_at DESC, id DESC
       LIMIT ?
+      ) SELECT id, kind,
+        CASE WHEN json_valid(image_content)
+                  AND substr(json_extract(image_content, '$.thumb'), 1, 5) = 'data:'
+             THEN json_set(image_content, '$.thumb', '/api/posts?thumb=' || id)
+             ELSE image_content END AS content,
+        created_at, reply
+      FROM echo_posts ORDER BY created_at DESC, id DESC
     `).bind(kind, limit).all();
-    posts = (result.results || []).map((p) => ({ ...p, content: lightenEchoContent(p.content) }));
+    posts = (result.results || []).map((p) => ({ ...p, content: lightenEchoContent(p.content, p.id) }));
   } else {
     const result = await db.prepare(`
       SELECT id, kind, content, created_at, reply

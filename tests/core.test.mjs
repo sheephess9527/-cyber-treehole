@@ -80,7 +80,7 @@ const get = (qs) => worker.fetch(new Request(`${BASE}/api/posts${qs}`), env);
   const parsed = list.posts.map((p) => JSON.parse(p.content));
   check("回响列表剥离 base64 大图", parsed.every((p) => !(p.image && p.image.startsWith("data:"))));
   check("回响列表保留 R2 URL", parsed.some((p) => p.image === "https://pub-xxx.r2.dev/photos/a.jpeg"));
-  check("回响列表保留缩略图", parsed.every((p) => p.thumb === "data:image/jpeg;base64,TINY"));
+  check("回响列表使用缩略图 URL", list.posts.every((p) => JSON.parse(p.content).thumb === `/api/posts?thumb=${p.id}`));
 }
 
 // 6) by-id detail returns the full content (base64 intact) for old echoes
