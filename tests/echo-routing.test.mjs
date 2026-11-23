@@ -75,11 +75,13 @@ for (const scenario of [
   { name: "changed gallery", changed: true, pending: false, renders: 1 },
   { name: "unchanged unresolved route", changed: false, pending: true, renders: 1 },
   { name: "failed unresolved route", changed: false, pending: true, error: true, renders: 2 },
+  { name: "empty cached gallery", changed: false, pending: true, empty: true, renders: 1 },
+  { name: "failed empty cached gallery", changed: false, pending: true, empty: true, error: true, renders: 2 },
 ]) {
   let renders = 0;
-  const cached = [{ id: 50 }];
+  const cached = scenario.empty ? [] : [{ id: 50 }];
   const refresh = vm.createContext({
-    loadingEchoes: false, echoRoutePending: scenario.pending, tab: "echoes",
+    loadingEchoes: false, echoRenderDependsOnLoading: scenario.pending, tab: "echoes",
     sharedEchoes: cached, echoesError: false,
     fetchShared: () => scenario.error ? Promise.reject(new Error("offline")) : Promise.resolve(scenario.changed ? [{ id: 48 }] : cached),
     parseEchoItems: (items) => items, writeEchoCache: () => {},
