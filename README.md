@@ -17,7 +17,7 @@ A modern, secure, and lightweight personal sanctuary built on serverless edge in
 
 ## 功能 / Features
 
-- 仪式感入口页
+- 仪式感入口页：后台预加载不切换页面，点击「步入树洞」后才打开呢喃墙
 - 呢喃墙（作者发布，公开浏览）
 - 光影与回响（图文记录，照片存 R2；删除回响时同步删除 R2 原图）
 - 信箱留言（访客可投递，作者可内联回复）
@@ -58,9 +58,11 @@ A modern, secure, and lightweight personal sanctuary built on serverless edge in
 node tests/core.test.mjs      # 发帖 / 鉴权 / 限流 / 隐私 / 回响剥离大图
 node tests/r2.test.mjs        # R2 照片上传 + 回响流程 + 删除清理
 node tests/migrate.test.mjs   # 一次性迁移接口的幂等性
+node tests/routing.test.mjs   # Worker 路由与 404
+node --test tests/entrance.test.mjs  # 入口页与后台预加载
 ```
 
-三个都应输出 `N 通过 / 0 失败`。测试直接 import `worker.js`，对 D1/R2 做内存模拟。
+Worker 测试应输出 `N 通过 / 0 失败`，对 D1/R2 做内存模拟。入口页测试在 Node 中执行页面脚本并模拟云端响应。
 
 ## 数据说明
 
