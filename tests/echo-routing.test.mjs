@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import vm from "node:vm";
 
 const html = readFileSync(new URL("../index.html", import.meta.url), "utf8");
-const script = html.match(/<script>([\s\S]*?)<\/script>/)[1];
+const script = html.match(/<script id="treehole-app">([\s\S]*?)<\/script>/)[1];
 new vm.Script(script);
 const extract = (name) => script.match(new RegExp(`      function ${name}\\([^]*?\\n      }`))[0];
 let local = [{ title: "old local", personal: true }];
